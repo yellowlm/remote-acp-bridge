@@ -57,7 +57,7 @@ sudo systemctl enable --now remote-acp-server@<instance>
 ### 客户端跑在 Windows
 
 * 只需要 Python，不需要第三方包。
-* `[servers.workspace]` 里填 `share_dir`（本机要暴露给远端的目录）、`device`（该共享的 UNC，如 `//fileserver.example.net/ws`）、`fs_type = "cifs"` 和账号口令。客户端会在 `share_dir` 里建目录符号链接指向宿主给的项目文件夹，服务端那边看到的就是这个共享。
+* `[servers.workspace]` 里填 `share_dir`（本机要暴露给远端的目录）、`device`（该共享的 UNC，如 `//fileserver.example.net/ws`）、`fs_type = "cifs"` 和账号口令。客户端会在 `share_dir` 里建一条目录联接（junction）指向宿主给的项目文件夹，服务端那边看到的就是这个共享。
 * 宿主用 stdio 拉起客户端时，**启动器的 stdout 就是 ACP 通道**：`.bat` 首行必须是 `@echo off`，里面也不许往 stdout 打任何字，否则宿主会收到 `-32700 Parse error`。日志走 `[servers.logging]` 的文件。
 
 ## Configure
@@ -139,7 +139,7 @@ remote_acp_client.py --config <client.toml> --server <name> --agent <name> [--se
 | `pass_mcp`（`[[servers]]` 键） | `["*"]`。名单里出现 `*` 或整条不写 ⇒ 上行 `session/new\|load\|resume` 的 `params.mcpServers` 一字不改；给了不含 `*` 的名单 ⇒ 只留 `name` 命中的项（没有 `name` 的项一律删）；`pass_mcp = []` ＝ 全删。 |
 
 `[servers.workspace]` 是可选的：不配 ⇒ 该 server 走**分支 B**（服务端忽略宿主 cwd）。配了 ⇒ 客户端启动时会在 `share_dir` 里：
-* 把宿主 `session/new` 的 cwd 按**项目文件夹名**建目录链接（同名直接复用）；Linux 用 `symlink`，Windows 用 `mklink /D`（目录符号链接，见 Troubleshooting）；
+* 把宿主 `session/new` 的 cwd 按**项目文件夹名**建目录链接（同名直接复用）；Linux 用 `symlink`，Windows 用 `mklink /J`（目录联接，不需要特权）；
 * **自动补** `.rab-workspace-token`（内容＝该 server 的 `sentinel_token`；已存在则不动）。它是服务端的**哨兵**：挂载后服务端要读到这个文件且内容相等，才认为「挂的是对的那个共享」。
 
 最小可用（Linux 客户端）：
@@ -245,7 +245,7 @@ X-Remote-ACP-Bridge-Config:     <base64(json)>   ← 总是带
 
 ## Troubleshooting
 
-* **挂载/链接要权限**：Windows 上建**目录符号链接**（`mklink /D`）需要**开发者模式或管理员** shell；`mklink /J`（junction）**指不了 UNC**，所以桥只用 `/D`。管理员**预建一次**之后，普通身份可以一直复用那条链接。
+* **服务端建链接要权限**：Windows 服务端把客户端的共享链到 `<workspace.root>\<hostname>` 用的是**目录符号链接**（`mklink /D`），需要**开发者模式或管理员** shell；`mklink /J`（junction）**指不了 UNC**，所以**服务端**只能用 `/D`。管理员**预建一次**之后，普通身份可以一直复用那条链接。客户端那侧（本机 cwd → `share_dir`）走的是 `mklink /J`，不需要特权。
 * **helper 的 `--config` 是必填**：它是 root 常驻服务，路径全靠命令行给（没有默认配置路径）；缺参按用法错误退 `2`。
 * **SMB 服务账号至少读权限**：要挂 SMB 共享，客户端 `[servers.workspace].username` 指定的那个服务账号，对下列文件夹**至少要有读权限**，否则服务端会明确回「没权限」而不是误报「不存在」：
 

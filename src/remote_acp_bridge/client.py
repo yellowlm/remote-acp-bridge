@@ -250,18 +250,22 @@ def share_link_name(cwd: str) -> str:
 
 
 def _make_dir_link(target: str, link: str) -> None:
-    """A directory symlink; on Windows fall back to a junction, which needs no privilege."""
+    """A junction on Windows (``mklink /J``); a directory symlink anywhere else.
+
+    A junction needs no privilege, unlike a directory symlink, which needs
+    ``SeCreateSymbolicLinkPrivilege`` (Developer Mode or an elevated shell).
+    """
+    if os.name == "nt":
+        result = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
+                                capture_output=True, text=True)
+        if result.returncode != 0 or not os.path.lexists(link):
+            detail = (result.stderr or result.stdout or "").strip() or f"exit {result.returncode}"
+            raise ShareLinkError(f"cannot create junction {link!r} -> {target!r}: {detail}")
+        return
     try:
         os.symlink(target, link, target_is_directory=True)
-        return
     except (OSError, NotImplementedError) as exc:
-        if os.name != "nt":
-            raise ShareLinkError(f"cannot link {link!r} -> {target!r}: {exc}") from exc
-    result = subprocess.run(["cmd", "/c", "mklink", "/J", link, target],
-                            capture_output=True, text=True)
-    if result.returncode != 0 or not os.path.lexists(link):
-        detail = (result.stderr or result.stdout or "").strip() or f"exit {result.returncode}"
-        raise ShareLinkError(f"cannot create junction {link!r} -> {target!r}: {detail}")
+        raise ShareLinkError(f"cannot link {link!r} -> {target!r}: {exc}") from exc
 
 
 def ensure_share_link(share_dir: str, cwd: str) -> str:
