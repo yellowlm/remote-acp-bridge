@@ -1,0 +1,4 @@
+# remote-acp-helper config (example). Install to <root>/configs/helper.toml.
+
+[socket]
+path = "/run/remote-acp-helper.sock"

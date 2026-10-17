@@ -1,0 +1,44 @@
+# remote-acp-helper.service - the privileged mount helper, resident root service (T5 §4).
+#
+# Installed by install.sh (symlinked into /usr/lib/systemd/system), enabled with:
+#   sudo systemctl enable --now remote-acp-helper.service
+#
+# The unprivileged bridge (account `agent`) connects to the Unix socket this service builds to
+# ask for a client's workspace share to be mounted or unmounted. That is the only thing the
+# privileged helper does.
+#
+# Runs as **root** because mount(8)/umount(8) need it — but only ever on a fixed argv it
+# builds itself from a validated request (see remote_acp_bridge/helper.py + mounting.py):
+#   * the mount point is validated to lie strictly under a root read from the instance's
+#     configs/*/server.toml (the helper never takes a root from the caller);
+#   * the device and every option are matched against a form/character whitelist;
+#   * credentials= is written by the helper itself to a 0600 temp file and passed by path;
+#   * the command is execve'd on an argv list, never run through a shell.
+#
+# The helper builds its OWN socket (there is no .socket unit): it reads the path from its own
+# config (--config below), unlinks a stale socket, binds + listens, and sets the socket to
+# root:agent 0660 — so only the `agent` group (the bridge) and root can connect. The path must
+# equal the `helper_socket` each instance's server.toml names.
+#
+# Do NOT add any namespacing sandbox directive (ProtectSystem / ProtectHome / PrivateTmp): each
+# makes systemd create a **private mount namespace**, so mount(8) succeeds but the host cannot
+# see the mount and the bridge's gate reports "not mounted" (T54/T55, measured on real
+# hardware). The helper's only job is to change the host's mount table, so it must run in it.
+# Confinement is by the socket permissions and the request whitelist, not by a namespace.
+
+[Unit]
+Description=Remote ACP Bridge mount helper
+
+[Service]
+Type=simple
+User=root
+Group=root
+ExecStart=/usr/bin/python3 @ROOT@/app/src/remote_acp_helper.py --config @ROOT@/configs/helper.toml
+Restart=on-failure
+StandardError=journal
+# NoNewPrivileges creates no mount namespace, so it cannot swallow the mount the way the three
+# directives above do, and it costs a fixed-argv execve nothing — a free hardening (T58-A5).
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target

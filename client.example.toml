@@ -1,0 +1,56 @@
+# remote-acp-client config (example). Pass it with --config.
+
+[[servers]]
+name   = "linux-host"
+host   = "linux.example.net"
+port   = 7801
+key    = "k-your-bridge-key"
+agents = ["opencode", "qwen"]
+
+# pass_mcp = ["*"]          # mcpServers to pass through: omitted/"*" = all, ["A"] = only A, [] = none
+
+[servers.tls]
+enabled  = true
+insecure = true
+ca_file  = ""
+# fingerprint = "…"        # base64(SHA-256(peer DER)) pin; checked even when insecure = true (mismatch ⇒ exit 6)
+
+# This server's own log sink (optional; same shape as the server's [logging]). With `file`
+# set, the client appends the level-filtered lines there and, at level = "debug", also the
+# frame trace (UP/DOWN, one global sequence number) — capturing the frames the host sends
+# even when its stderr cannot be seen. A relative `file` is resolved against this config
+# file's directory. Omit the section (or the file) to keep logging to stderr.
+# [servers.logging]
+# level = "debug"
+# file  = "C:\\Storage\\rab-client.log"
+
+# This server's own workspace share (optional; omit it to use branch B = <server root>/localhost/<host folder name>).
+# [servers.workspace]
+# hostname       = "my-pc.example.net"
+# share_dir      = "C:\\Storage\\AionUIWorkspace"
+# fs_type        = "cifs"
+# device         = "//fileserver.example.net/AionUIWorkspace"
+# mount_options  = ["soft", "vers=3.1.1", "echo_interval=4"]
+# username       = "share-user"
+# password       = "…"
+# domain         = ""
+# The client seeds <share_dir>/.rab-workspace-token with this token on startup (before the
+# handshake) if it is not there yet; an existing file is left untouched. The server reads that
+# fixed file name from its own mount of the same share.
+# sentinel_token = "put-the-same-secret-as-the-share-marker"
+
+[[servers]]
+name   = "behind-proxy"
+host   = "example.net"
+port   = 443
+key    = "k-another-key"
+agents = ["qwen"]
+tls    = { enabled = true, insecure = false, ca_file = "" }
+
+[[servers]]
+name   = "local-v6"
+host   = "::1"
+port   = 7801
+key    = "k-local"
+agents = ["opencode", "qwen"]
+tls    = { enabled = false }

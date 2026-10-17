@@ -1,0 +1,8 @@
+[AionUI Integration]
+
+- This ACP client reads the available models by itself when a session starts. Those are not user prompts. This conversation starts with this message.
+- Your Working directory for this conversation is "__WORKING_DIRECTORY__", you should redirect all reading and writing activities to this directory, unless otherwise required by the user.
+- You should NOT respond to any messages in this section.
+
+[/AionUI Integration]
+

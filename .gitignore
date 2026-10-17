@@ -1,0 +1,37 @@
+"""Source tree hygiene for the repository."""
+
+# Byte-code and test leftovers
+__pycache__/
+*.py[cod]
+.pytest_cache/
+
+# Build output is produced into ../Dev by build.py
+build/
+dist/
+*.zip
+
+# Runtime material must never be committed: real keys, certificates, configs
+keys.key
+*.key
+*.crt
+*.cer
+*.der
+*.p12
+*.pfx
+*.pem
+instance.toml
+client.toml
+logs/
+*.log
+*.pid
+
+# The names the tracked examples get copied to (T71): server.toml / helper.toml are the
+# per-instance and helper configs, keys.txt is a server's real key file, and configs/ is
+# the whole instances layer. The examples themselves stay tracked.
+server.toml
+helper.toml
+keys.txt
+configs/
+
+# ... but the documented examples are tracked
+!keys.example.txt

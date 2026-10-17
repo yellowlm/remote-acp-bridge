@@ -1,0 +1,11 @@
+# Line endings are part of the contract: a Windows checkout that rewrites these
+# files as CRLF breaks the "portable source tree" claim (T10-S3 / T13 行尾项).
+* text=auto eol=lf
+*.py text eol=lf
+*.toml text eol=lf
+*.md text eol=lf
+*.key text eol=lf
+
+# cmd.exe mis-parses LF-only batch files, so the two wrappers stay CRLF on purpose.
+*.bat text eol=crlf
+*.cmd text eol=crlf

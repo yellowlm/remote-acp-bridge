@@ -1,0 +1,70 @@
+# remote-acp-server instance config (example).
+# Copy to <configs>/<instance>/server.toml.
+
+# [env]                     # env injected into every agent here; an [[agents]].env entry overrides a same-named one. e.g. HTTP_PROXY = "http://proxy:3128"
+
+[server]
+# host: omitted or "" binds IPv4 + IPv6 (one listener per stack, one port); "0.0.0.0"
+# binds IPv4 only; "::" binds IPv6 only. Any other address/domain is resolved with
+# getaddrinfo and bound as-is (口径 §8, 2026-10-13).
+host                    = ""
+port                    = 7801
+max_sessions            = 0
+connection_idle_seconds = 0
+session_grace_seconds   = 0
+
+[server.tls]
+enabled   = true
+cert_file = "server.crt"
+key_file  = "server.key"
+
+[auth]
+mode                = "key"
+keys_file           = "keys.txt"
+clock_skew_seconds  = 300
+nonce_cache_seconds = 600
+
+[logging]
+level = "off"
+file  = ""
+
+[[agents]]
+name    = "opencode"
+command = "opencode"
+args    = ["acp"]
+cwd     = "/home/agent"
+env     = {}
+# Server-side plugins this agent's frames go through, in written order (= chain order).
+# Each entry needs `name` (a built-in plugin) and `config` (a table, handed to the plugin
+# as-is; use {} when it takes none). Omit for a plain pass-through.
+# aionui_remove_skill_prompt strips the "## Available Skills" block AionUi prepends to every
+# prompt; hang it on *every* agent. An openclaw agent also gets aionui_openclaw_adapter
+# (AionUi's model dropdown; openclaw advertises no model list). Its `openclaw_command` (the
+# CLI's absolute path) also adds the session permission-mode dropdown as a `category:"mode"`
+# option, applied via `<openclaw_command> gateway call sessions.patch …` — with no URL switch,
+# so the CLI only ever drives the local gateway it is configured with.
+# [[agents.plugins]]
+# name   = "aionui_remove_skill_prompt"
+# config = {}
+# [[agents.plugins]]
+# name   = "aionui_openclaw_adapter"
+# config = { openclaw_command = "/home/agent/.npm-global/bin/openclaw" }
+
+[[agents]]
+name    = "qwen"
+command = "qwen"
+args    = ["--acp"]
+cwd     = "/home/agent"
+env     = {}
+# [[agents.plugins]]
+# name   = "aionui_remove_skill_prompt"
+# config = {}
+
+[workspace]
+root                     = "/home/agent/workspace"
+helper_socket            = "/run/remote-acp-helper.sock"
+mount_uid                = "agent"
+mount_gid                = "agent"
+monitor_interval_seconds = 5
+monitor_timeout_seconds  = 2
+monitor_fail_threshold   = 3

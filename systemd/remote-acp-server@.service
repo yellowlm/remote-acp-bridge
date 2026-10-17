@@ -1,0 +1,37 @@
+# remote-acp-server@<instance>.service - system-level template unit.
+#
+# Installed by install.sh (symlinked into /usr/lib/systemd/system).
+# Runs as the dedicated unprivileged account `agent`; the code it executes lives in
+# this delivery directory - the delivery directory IS the runtime directory, nothing
+# is copied anywhere else.
+#
+# Interpreter: the **system** python3 (/usr/bin/python3) - no venv anywhere. Dependency
+# is `websockets`, installed into the system interpreter with dnf; see README "Dependencies".
+
+[Unit]
+Description=Remote ACP Bridge (%i)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Run as the dedicated service account `agent` (install.sh creates it when missing).
+# Everything the unit touches must therefore be readable by that account: the agents'
+# binaries from a system location (e.g. /opt/rab-node/bin), never from another user's
+# 0700 home.
+User=agent
+Group=agent
+WorkingDirectory=/home/agent
+ExecStart=/usr/bin/python3 @ROOT@/app/src/remote_acp_server.py --instance %i --instances-dir @ROOT@/configs
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# An agent subprocess of a session belongs to this unit's cgroup, so KillMode=control-group
+# reaps it whether the service exits cleanly or is killed.
+NoNewPrivileges=false
+
+[Install]
+WantedBy=multi-user.target
