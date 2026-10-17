@@ -1,10 +1,10 @@
-"""Server plugin framework primitives (T24).
+"""Server plugin framework primitives.
 
 A plugin is a class with up to three hooks::
 
-    on_to_agent(frame, ctx)      every frame on its way to the agent
-    on_from_agent(frame, ctx)    every frame coming back from the agent
-    on_open(session, ctx)        the session's agent has just started
+    on_to_agent(frame, ctx) every frame on its way to the agent
+    on_from_agent(frame, ctx) every frame coming back from the agent
+    on_open(session, ctx) the session's agent has just started
 
 A hook returns ``None`` to pass the frame unchanged, a ``str`` to replace it, or ``DROP``
 to swallow it. A hook may also inject frames through ``ctx`` (``send_to_agent`` /

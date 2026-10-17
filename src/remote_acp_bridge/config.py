@@ -16,7 +16,7 @@ from pathlib import Path, PurePosixPath
 
 AGENT_PATH_PREFIX = "/agents/"
 
-# T93: a SHA-256 digest is 32 bytes; a `[servers.tls].fingerprint` decodes to exactly that.
+# A SHA-256 digest is 32 bytes; a `[servers.tls].fingerprint` decodes to exactly that.
 SHA256_BYTES = 32
 
 
@@ -30,7 +30,7 @@ def _get(section: dict, key: str, default):
 
 
 def default_config_path(instances_dir: str | os.PathLike[str], instance: str) -> Path:
-    """``<instances_dir>/<instance>/server.toml`` (T40, T5).
+    """``<instances_dir>/<instance>/server.toml``.
 
     ``instances_dir`` is the ``configs/`` directory itself (the parent of the per-instance
     folders). The instance name **is** the directory name and the file is always
@@ -102,7 +102,7 @@ class TlsConfig:
 
 @dataclass
 class PluginConfig:
-    """One ``[[agents.plugins]]`` entry (T27): a built-in plugin's name and its config.
+    """One ``[[agents.plugins]]`` entry: a built-in plugin's name and its config.
 
     ``config`` is passed to the plugin untouched — the server does not interpret or validate
     its contents (the plugin reads it as ``ctx.config``).
@@ -119,7 +119,7 @@ class AgentConfig:
     args: list[str] = field(default_factory=list)
     cwd: str = ""
     env: dict[str, str] = field(default_factory=dict)
-    # T27: the plugin chain in written order; each entry is a name plus the config dict.
+    # The plugin chain in written order; each entry is a name plus the config dict.
     plugins: list[PluginConfig] = field(default_factory=list)
 
     @property
@@ -128,7 +128,7 @@ class AgentConfig:
 
 
 def _load_plugins(agent_name: str, raw, registry: dict) -> list[PluginConfig]:
-    """The ``[[agents.plugins]]`` array for one agent (T27).
+    """The ``[[agents.plugins]]`` array for one agent.
 
     Each entry is a table with exactly ``name`` (a built-in plugin) and ``config`` (a table,
     required; handed to the plugin untouched). The written order is the chain order. The old
@@ -173,7 +173,7 @@ def _load_plugins(agent_name: str, raw, registry: dict) -> list[PluginConfig]:
 def _load_agents(raw: list) -> dict[str, AgentConfig]:
     # Imported here, not at module scope: the client imports this module, and the plugin
     # registry is server-only — a top-level import would pull it into the client's closure
-    # (T21/T24). Agents are only ever loaded on the server.
+    #. Agents are only ever loaded on the server.
     from .plugins import PLUGINS
 
     agents: dict[str, AgentConfig] = {}
@@ -275,7 +275,7 @@ _LEGACY_SERVER_WORKSPACE = {
 
 @dataclass
 class WorkspaceConfig:
-    """Server-side workspace root and liveness timing (T1 §3).
+    """Server-side workspace root and liveness timing.
 
     Always on: the server manages every session's working directory (branch A under a
     client's mounted share, branch B under ``root`` by session uuid), so ``root`` is
@@ -283,15 +283,15 @@ class WorkspaceConfig:
     credentials and its sentinel *token* all travel with the client that connects (in the
     handshake ``Config`` header), so the server only says **where** client shares get mounted
     (``root``) and the monitor cadence. The **sentinel file name** is a fixed constant
-    (``frames.SENTINEL_NAME`` = ``.rab-workspace-token``), not a config field (T20); a
+    (``frames.SENTINEL_NAME`` = ``.rab-workspace-token``), not a config field; a
     ``sentinel_name`` left behind in a config file is ignored rather than rejected.
     """
 
     root: str = ""                       # fixed base dir, e.g. /home/agent/workspace
-    # The bridge's side of the helper socket (T5). The helper binds the same path, read from
+    # The bridge's side of the helper socket. The helper binds the same path, read from
     # its own configs/helper.toml `[socket].path`; the two must name the same path.
     helper_socket: str = "/run/remote-acp-helper.sock"
-    # The owner the mounted share is given (T8). Server config, not the client's mount_options:
+    # The owner the mounted share is given. Server config, not the client's mount_options:
     # the client can no longer name uid=/gid= (they are stripped), so these are the only source.
     mount_uid: str = "agent"
     mount_gid: str = "agent"
@@ -315,8 +315,8 @@ class WorkspaceConfig:
             monitor_timeout_seconds=float(_get(data, "monitor_timeout_seconds", 2.0)),
             monitor_fail_threshold=int(_get(data, "monitor_fail_threshold", 3)),
         )
-        # The workspace is always on (T1 §5): every server.toml must name its root.
-        # T88: the criterion is platform-aware. ``PurePosixPath('C:\\RAB\\ws')`` is never
+        # The workspace is always on: every server.toml must name its root.
+        # The criterion is platform-aware. ``PurePosixPath('C:\\RAB\\ws')`` is never
         # absolute, which kept the Windows server from starting at all. The platform verdict
         # (``Path``) is the one that matters on the host the bridge runs on; a POSIX-style
         # root stays accepted as before (it is absolute for the Linux deployment, and this
@@ -335,7 +335,7 @@ class WorkspaceConfig:
         if ws.monitor_interval_seconds <= 0:
             raise ConfigError("[workspace] monitor_interval_seconds must be > 0")
         if ws.monitor_timeout_seconds <= 0:
-            # Also the handshake mount/gate timeout (T49-R19); a 0/negative value would either
+            # Also the handshake mount/gate timeout; a 0/negative value would either
             # refuse instantly or never time out.
             raise ConfigError("[workspace] monitor_timeout_seconds must be > 0")
         return ws
@@ -343,12 +343,12 @@ class WorkspaceConfig:
 
 @dataclass
 class ClientWorkspaceConfig:
-    """The client's own network share, sent to the server on connect (T53 §3).
+    """The client's own network share, sent to the server on connect.
 
     Everything about *what to mount* lives here, on the machine that owns the share. The
     server mounts ``device`` at ``root/<hostname>`` using these options and credentials,
     and checks the sentinel: ``read(root/<hostname>/.rab-workspace-token) == sentinel_token``.
-    That token is **required** (T55-S3): without it the gate could only ask "is anything
+    That token is **required**: without it the gate could only ask "is anything
     mounted here", which is exactly the wrong-share/empty-share case the sentinel exists to
     catch, and it would degrade silently.
 
@@ -357,7 +357,7 @@ class ClientWorkspaceConfig:
     travels in the handshake ``Config`` header and then into the helper over its Unix socket.
     No value is ever baked into code.
 
-    ``share_dir`` (T1 §4A) is this machine's own mount of the same share: the client links the
+    ``share_dir`` is this machine's own mount of the same share: the client links the
     host's ``session/new`` cwd into it and sends the server only the **link name**. It is a
     local path and lives in the config, never in the environment.
     """
@@ -401,13 +401,13 @@ class ClientWorkspaceConfig:
             raise ConfigError("[workspace] password is required for cifs")
         # Without a token the server-side gate degrades to "is _anything_ mounted here",
         # which is exactly the "wrong share / empty share mounted" case the sentinel exists
-        # to catch — and it degrades silently (T55-S3). Make the client state it.
+        # to catch — and it degrades silently. Make the client state it.
         if not sentinel_token:
             raise ConfigError(
                 "[workspace] sentinel_token is required: it is what proves the mounted share "
                 "is yours and not an empty or wrong one sitting on the same path"
             )
-        # Without it branch A cannot map the host's session cwd into the share (T1 §6A): the
+        # Without it branch A cannot map the host's session cwd into the share: the
         # client would send a Windows path the server cannot use.
         if not share_dir:
             raise ConfigError(
@@ -427,12 +427,12 @@ class ClientWorkspaceConfig:
         )
 
     def as_descriptor(self) -> dict:
-        """The workspace payload of the handshake ``Config`` header (T1 §2).
+        """The workspace payload of the handshake ``Config`` header.
 
         Includes ``password``. Its only storage is the ``client.toml`` the operator wrote
         (keep it 0600); the client makes no further copy — this dict is built in memory,
         serialised into the header, and never returned by ``repr`` (see the field) and never
-        logged on either side (T55-S8). ``share_dir`` is sent because the task book's payload
+        logged on either side. ``share_dir`` is sent because the task book's payload
         names it, but the server only needs the mount fields.
         """
         return {
@@ -449,7 +449,7 @@ class ClientWorkspaceConfig:
 
 
 def _load_env(raw) -> dict[str, str]:
-    """The top-level ``[env]`` table of an instance (T77): key -> string.
+    """The top-level ``[env]`` table of an instance: key -> string.
 
     Optional — absent or empty is byte-for-byte today's behaviour. Anything else is a config
     error, checked the way every other field is (one English, ASCII line).
@@ -478,10 +478,10 @@ class ServerConfig:
     logging: LoggingConfig = field(default_factory=LoggingConfig)
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     agents: dict[str, AgentConfig] = field(default_factory=dict)
-    # T77: a top-level ``[env]`` table injected into **every** agent of this instance, so a
+    # A top-level ``[env]`` table injected into **every** agent of this instance, so a
     # shared variable is written once. It sits between the inherited environment and the
     # agent's own ``env``: an ``[[agents]].env`` entry overrides a same-named global one, and
-    # the session facts the bridge injects (T64) override both.
+    # the session facts the bridge injects override both.
     env: dict[str, str] = field(default_factory=dict)
 
     @classmethod
@@ -523,7 +523,7 @@ class ClientTlsConfig:
     enabled: bool = True
     insecure: bool = False
     ca_file: str = ""
-    # T93: an optional certificate pin — ``base64(SHA-256(peer DER))``. Orthogonal to
+    # An optional certificate pin — ``base64(SHA-256(peer DER))``. Orthogonal to
     # ``insecure``, which only decides CA/hostname checking: a configured pin is **always**
     # enforced (that combination is exactly the self-signed-certificate deployment).
     fingerprint: str = ""
@@ -558,21 +558,21 @@ class ServerTarget:
     port: int
     agents: list[str] = field(default_factory=list)
     tls: ClientTlsConfig = field(default_factory=ClientTlsConfig)
-    # The bridge key lives on the server it authenticates to (T53): one inline key per
+    # The bridge key lives on the server it authenticates to: one inline key per
     # [[servers]] entry. Optional on the dataclass because from_dict runs before load()
     # enforces that every entry carries one, but a config that omits it is rejected.
     key: str = ""
-    # T67: ``pass_mcp`` names the mcpServers entries this client lets through on
+    # ``pass_mcp`` names the mcpServers entries this client lets through on
     # session-opening frames. ``["*"]`` (the default) passes every entry untouched; a list
     # without ``*`` keeps only the entries whose ``name`` is listed (``[]`` drops them all).
     # It replaced the boolean ``drop_local_mcp``, which could only say "keep all" or "drop all".
     # ``remote_cwd`` was removed in T2 — the server owns the session cwd now (branches A/B),
     # so a client-side cwd rewrite only fought it.
     pass_mcp: list[str] = field(default_factory=lambda: ["*"])
-    # This server's own workspace share (T2 §3): `[servers.workspace]`. Per server, not
+    # This server's own workspace share: `[servers.workspace]`. Per server, not
     # top-level — the handshake carries the connecting server's descriptor, or `{}`.
     workspace: "ClientWorkspaceConfig | None" = None
-    # This server's own log sink (T23): `[servers.logging]`, same shape as the server's
+    # This server's own log sink: `[servers.logging]`, same shape as the server's
     # `[logging]`. The default (`off`, no file) changes nothing — the client keeps writing
     # its lines to stderr; naming a file redirects the filtered lines (and, at `debug`, the
     # frame trace with sequence numbers) into that file instead.
@@ -622,7 +622,7 @@ class ServerTarget:
         if "#" in key:
             raise ConfigError(f"[servers] {name}: key must not contain '#'")
         if "drop_local_mcp" in data:
-            # T67: refusing is the point. Treating the old name as "the default" would quietly
+            # Refusing is the point. Treating the old name as "the default" would quietly
             # turn an operator's "drop them all" into "keep them all".
             raise ConfigError(
                 f"[servers] {name}: drop_local_mcp was removed (T67): use pass_mcp = [] to drop "
@@ -660,10 +660,10 @@ class ServerTarget:
 
 @dataclass
 class ClientConfig:
-    # T53: the bridge key lives on each [[servers]].key and nowhere else. The client-wide
+    # The bridge key lives on each [[servers]].key and nowhere else. The client-wide
     # ``key`` and ``keys_file`` are both abolished (hard error, no compat) so ``[client]``
     # is genuinely empty and can be deleted; every server must carry its own key.
-    # T2 §3: the workspace is per server (``[servers.workspace]``); a top-level ``[workspace]``
+    # The workspace is per server (``[servers.workspace]``); a top-level ``[workspace]``
     # is no longer read.
     servers: dict[str, ServerTarget] = field(default_factory=dict)
 

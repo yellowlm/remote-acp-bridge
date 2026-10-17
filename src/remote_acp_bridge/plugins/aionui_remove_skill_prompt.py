@@ -1,4 +1,4 @@
-"""Second server plugin: drop the ``## Available Skills`` section AionUi injects (T27-C).
+"""Second server plugin: drop the ``## Available Skills`` section AionUi injects.
 
 AionUi prepends its own prompt to every ``session/prompt``, wrapped in
 ``[Assistant Rules]`` … ``[/Assistant Rules]``: an ``## Available Skills`` section that the
@@ -84,7 +84,7 @@ class AionuiRemoveSkillPrompt:
     name = "aionui_remove_skill_prompt"
 
     def __init__(self):
-        # T29: strip at most once per session; afterwards every frame passes straight through.
+        # Strip at most once per session; afterwards every frame passes straight through.
         self._stripped = False
 
     async def on_to_agent(self, frame, ctx):

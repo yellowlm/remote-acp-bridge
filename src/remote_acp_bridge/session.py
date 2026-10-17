@@ -41,7 +41,7 @@ class _Ask:
 
 
 # The two ``session/update`` chunk types that carry a command's *text* answer. Everything
-# else an ask's window sees is none of the ask's business and must reach the host (T26/S1).
+# else an ask's window sees is none of the ask's business and must reach the host.
 _ASK_CHUNK_TYPES = frozenset({"agent_message_chunk", "agent_thought_chunk"})
 
 
@@ -86,7 +86,7 @@ def _is_our_chunk(frame: str, ask: _Ask) -> bool:
 
 
 class PluginContext:
-    """The four capabilities a plugin hook is handed (T24): send to agent/host, ask, log.
+    """The four capabilities a plugin hook is handed: send to agent/host, ask, log.
 
     Frames the plugin itself pushes still pass the *other* plugins, but never re-enter this
     one (anti-self).
@@ -95,7 +95,7 @@ class PluginContext:
     def __init__(self, session: "Session", plugin, config: dict | None = None):
         self._session = session
         self._plugin = plugin
-        # T27: this entry's [[agents.plugins]].config, handed over as-is.
+        # This entry's [[agents.plugins]].config, handed over as-is.
         self.config = config if isinstance(config, dict) else {}
 
     async def send_to_agent(self, frame: str) -> None:
@@ -139,7 +139,7 @@ class Session:
         self.pending_max = pending_max
         self.log = log
         self.on_closed = on_closed
-        # T77: the instance-wide ``[env]``, one layer below the agent's own ``env``.
+        # The instance-wide ``[env]``, one layer below the agent's own ``env``.
         self.global_env = dict(global_env or {})
         self.connection = None
         self.proc: asyncio.subprocess.Process | None = None
@@ -160,7 +160,7 @@ class Session:
         self._sender: asyncio.Task | None = None
         self._stderr: asyncio.Task | None = None
         self._grace: asyncio.TimerHandle | None = None
-        # -- plugins (T24) --------------------------------------------------
+        # -- plugins --------------------------------------------------
         self._plugins: list = []
         self._contexts: dict[int, PluginContext] = {}
         for spec in (getattr(agent, "plugins", None) or []):
@@ -192,23 +192,23 @@ class Session:
     # -- agent lifecycle ---------------------------------------------------
 
     def ensure_cwd(self, cwd: str, base: str = "") -> str:
-        """Create the directory the session is going to work in (T34).
+        """Create the directory the session is going to work in.
 
         The host sits on another machine and cannot mkdir here, and a missing directory
         only shows up later as the agent failing to start (opencode answers a bogus cwd
         on the first ``session/prompt``). An empty cwd means "use the process default"
         and is skipped; an existing directory is left exactly as it is. A relative cwd is
         resolved against ``base`` — the directory the agent itself will start in — so the
-        one that gets created is the one that gets used (T35-S2).
+        one that gets created is the one that gets used.
 
         Returns an empty string when nothing was created, otherwise the path created, so
         the caller can put one line in the log. Raises ``OSError`` when the directory
         cannot be made: that becomes the refusal the client is told with — a handshake 500
         while the workspace feature is off, or the reason on the bridge error frame / the
         close frame once the agent start is deferred behind the connection's first frame
-        (T56-D) — never a session that quietly works somewhere else. ``os.makedirs`` reports
+         — never a session that quietly works somewhere else. ``os.makedirs`` reports
         a path containing a NUL byte as ``ValueError``, which is not an ``OSError``, so both
-        are folded into the same refusal (T35-R15) — otherwise the error escapes the
+        are folded into the same refusal — otherwise the error escapes the
         handler, the connection dies with 1011 and the agent already spawned by that
         session is left running with nobody attached to it.
         """
@@ -223,19 +223,19 @@ class Session:
         except (OSError, ValueError) as exc:
             # Our own English sentence, never strerror: this text is what the client is
             # refused with, and a Chinese Windows renders WinError 5 in local words
-            # (T55-M4 applies to this path too, not just the workspace one).
+            # (M4 applies to this path too, not just the workspace one).
             raise OSError(f"cannot create session cwd {cwd!r}: {english_reason(exc)}") from exc
         return cwd
 
     async def start(self, extra_env: dict[str, str] | None = None) -> None:
         """Launch the agent subprocess.
 
-        ``extra_env`` is the bridge's own session-level environment (T64): the client's
+        ``extra_env`` is the bridge's own session-level environment: the client's
         hostname and the connection's IP family. Our values win over a same-named
         ``[[agents]].env`` entry and that override is logged once — these are runtime facts
         about the session, not settings the config file may shadow.
 
-        The full ladder, low to high (T77): the inherited ``os.environ``, then the instance's
+        The full ladder, low to high: the inherited ``os.environ``, then the instance's
         ``[env]``, then the agent's own ``[[agents]].env``, then ``extra_env``.
         """
         command = [self.agent.command, *self.agent.args]
@@ -345,7 +345,7 @@ class Session:
         return time.time() - self.last_activity
 
     async def wait_exit(self, timeout: float) -> None:
-        """Wait (bounded) for the agent process to exit before its cwd is unmounted (T14).
+        """Wait (bounded) for the agent process to exit before its cwd is unmounted.
 
         The agent's cwd may live inside the mounted share, so unmounting before it exits gives
         ``target is busy``. ``close()`` already reaps the process; this is the explicit,
@@ -359,7 +359,7 @@ class Session:
             pass
 
     async def send_to_agent(self, frame: str | bytes, *, origin=None) -> None:
-        """Host → agent. Every frame runs the plugin chain first (T24)."""
+        """Host → agent. Every frame runs the plugin chain first."""
         out = await self._run_hooks("on_to_agent", frame, origin=origin)
         if out is None:
             return
@@ -402,7 +402,7 @@ class Session:
                 self._warn(f"ws send failed: {exc!r}")
                 self._buffer(frame)
 
-    # -- plugin chain (T24) -------------------------------------------------
+    # -- plugin chain -------------------------------------------------
 
     def _context(self, plugin) -> PluginContext:
         context = self._contexts.get(id(plugin))
@@ -448,7 +448,7 @@ class Session:
         return frame
 
     async def from_agent(self, frame: str, *, origin=None) -> None:
-        """Agent → host. Every frame runs the plugin chain first (T24)."""
+        """Agent → host. Every frame runs the plugin chain first."""
         out = await self._run_hooks("on_from_agent", frame, origin=origin)
         if out is not None:
             self._deliver(out)
@@ -456,7 +456,7 @@ class Session:
     def _route_from_agent(self, frame: str) -> None:
         """Reader side: hand an ask its own frames, everything else to the processor.
 
-        Only what provably belongs to the in-flight ask is swallowed (T26/S1): the reply to
+        Only what provably belongs to the in-flight ask is swallowed: the reply to
         its private id, and a text chunk for its session while that id is in flight. Any
         other frame — ``available_commands_update``, ``session_info_update``, ``usage_update``,
         ``tool_call*``, a reply to some other id — is passed on to the host untouched.
@@ -487,7 +487,7 @@ class Session:
 
     async def ask_agent(self, method, params, timeout=PLUGIN_ASK_TIMEOUT, *, origin=None):
         """Ask the agent one request with a private id; the reply to that id, and its text
-        answer while the id is in flight, are captured and never reach the host (T24/T26)."""
+        answer while the id is in flight, are captured and never reach the host."""
         self._ask_seq += 1
         request_id = f"rab-plugin-{self._ask_seq}"
         request = json.dumps(
@@ -539,13 +539,13 @@ class Session:
                 self.proc.kill()
                 await self.proc.wait()
         if self.proc is not None:
-            # T17-S3: close the subprocess transport while the loop still lives.
+            # S3: close the subprocess transport while the loop still lives.
             # ``asyncio.subprocess.Process`` has no ``close()`` on any version we
             # support (verified on 3.12.12 and 3.14.7), so the call that used to sit
             # here was a silent no-op inside the suppress(): the transport survived
             # until GC, and if the interpreter got to it after the loop was closed,
             # CPython printed "Exception ignored in: BaseSubprocessTransport.__del__
-            # ... Event loop is closed". There is no public API for this, hence the
+            #... Event loop is closed". There is no public API for this, hence the
             # private attribute; if it ever disappears we fall back to today's
             # behaviour rather than crashing a session teardown.
             transport = getattr(self.proc, "_transport", None)

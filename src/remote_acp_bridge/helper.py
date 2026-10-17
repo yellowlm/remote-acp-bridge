@@ -2,21 +2,21 @@
 
 A resident **root** systemd service (``remote-acp-helper.service``): it builds its own Unix
 socket (path from its own config file) and serves one short transaction per connection —
-read one JSON request, validate it against the whitelist in :mod:`.mounting`, run
+read one JSON request, validate it against the whitelist in:mod:`.mounting`, run
 ``/bin/mount`` or ``/bin/umount`` by ``execve`` on a fixed argv list (never a shell), write
 one JSON reply, close. Everything else is refused.
 
 The allowed mount roots come **only** from the instance configs next to the helper's own
-config (T4 / T5 §5) — never from the request, which would let the unprivileged ``agent``
+config — never from the request, which would let the unprivileged ``agent``
 account point the helper at any directory.
 
 The credential file is this process's own and lives only for the one mount: the request
 carries ``credentials`` (a username/password/domain triple that arrived over the socket, not
 argv), which we write to a ``0600`` temp file, hand mount the path, and delete immediately.
-The caller can never name a ``credentials=`` option; :func:`mounting.validate_options`
+The caller can never name a ``credentials=`` option;:func:`mounting.validate_options`
 rejects one outright.
 
-Entry point: :func:`main`, run by systemd through ``src/remote_acp_helper.py``. Validation is
+Entry point::func:`main`, run by systemd through ``src/remote_acp_helper.py``. Validation is
 pure and the mount itself goes through an injectable ``spawn``; the socket loop takes an
 injectable ``server_factory``, so the decision path and the accept loop are unit-tested
 without root, a real filesystem, or AF_UNIX.
@@ -39,7 +39,7 @@ from pathlib import PurePosixPath
 from . import mounting
 from .mounting import MountInputError
 
-# T97: there is no default config path — the helper reads everything from its command line
+# There is no default config path — the helper reads everything from its command line
 # (``--config`` is required), so nothing is hardcoded to one deployment root any more. The
 # socket default stays: it is a socket's conventional path, overridable in helper.toml.
 DEFAULT_HELPER_SOCKET = "/run/remote-acp-helper.sock"
@@ -50,7 +50,7 @@ class HelperError(Exception):
 
 
 def discover_roots(instances_dir: str) -> list[str]:
-    """The allowed mount roots, read from ``<instances_dir>/*/server.toml`` (T4 / T5 §5).
+    """The allowed mount roots, read from ``<instances_dir>/*/server.toml``.
 
     ``instances_dir`` is the ``configs/`` directory (the parent of the per-instance folders and
     of the helper's own ``helper.toml``). One root per instance's ``[workspace].root``. Files
@@ -89,10 +89,10 @@ def validate_request(req: dict, roots: list[str]) -> dict:
     ``realpath`` — that it lies strictly under **one of the configured ``roots``** (not equal
     to a root, no ``..``). That is the whole confinement: whoever may reach the socket may
     mount anything *under a configured root*, and nothing anywhere else. The roots themselves
-    come from the config files (T4), never from the request. The bridge derives the mount point
+    come from the config files, never from the request. The bridge derives the mount point
     as ``root/<hostname>`` on its side.
 
-    Defence in depth (T66-E2): the **last segment** is put through ``sanitize_hostname``
+    Defence in depth: the **last segment** is put through ``sanitize_hostname``
     here as well, so the ASCII/length rule that keeps every refusal reason and log line on
     the wire plain English does not depend on the caller having applied it. A bridge that
     was rebuilt without that boundary check, or a hand-made request, still cannot get a
@@ -132,7 +132,7 @@ def validate_request(req: dict, roots: list[str]) -> dict:
     if fs_type == "cifs":
         if not isinstance(creds, dict) or not creds.get("username") or not creds.get("password"):
             raise HelperError("cifs mount needs username and password credentials")
-    # The share owner comes from the server config (T8), passed by the bridge as dedicated
+    # The share owner comes from the server config, passed by the bridge as dedicated
     # fields — never from the caller's mount options (validate_options drops uid=/gid= there).
     try:
         uid = mounting.validate_owner_token("uid", str(req.get("uid", "") or ""))
@@ -200,7 +200,7 @@ def _journal(note: str) -> None:
 def default_spawn(argv, *, check):
     """Run mount(8)/umount(8) with its output **captured**.
 
-    T54-measured: once the unit wires stdio to the socket, an un-captured ``/bin/mount``
+    measured: once the unit wires stdio to the socket, an un-captured ``/bin/mount``
     prints its own line onto the socket first, and the bridge reads *that* as the reply
     ("workspace helper response unparsable"). Capturing keeps the wire clean; the text is
     still surfaced to the journal for the operator.
@@ -274,7 +274,7 @@ def handle(req: dict, *, roots: list[str] | None = None, spawn=default_spawn) ->
         _journal(f"{fields['op']} failed (rc={exc.returncode}): {_command_output(exc)}")
         return {"ok": False, "reason": "mount command failed"}
     except (OSError, MountInputError) as exc:
-        # Never str(OSError): strerror is locale-dependent (T55-M4 — a Chinese Windows
+        # Never str(OSError): strerror is locale-dependent (M4 — a Chinese Windows
         # renders WinError 5 in local words) and this string reaches the client's control
         # frame and the log, which have to be English on every host.
         reason = mounting.english_reason(exc)
@@ -284,7 +284,7 @@ def handle(req: dict, *, roots: list[str] | None = None, spawn=default_spawn) ->
 
 
 def load_helper_config(path: str) -> str:
-    """The helper's socket path, from its own config file (T5 §5).
+    """The helper's socket path, from its own config file.
 
     The path lives under a ``[socket]`` heading — ``[socket]`` then ``path = "…"`` (2026-10-13
     口径 §6). Missing file ⇒ the default socket (an operator who never created one gets the
@@ -313,13 +313,13 @@ def load_helper_config(path: str) -> str:
 
 
 def _agent_gid() -> int:
-    """The gid of the ``agent`` group the socket is owned by (T5 §4)."""
+    """The gid of the ``agent`` group the socket is owned by."""
     import grp
     return grp.getgrnam("agent").gr_gid
 
 
 def _own_socket(path: str, gid: int) -> None:
-    """Set the socket to root:agent ``0660`` (T5 §4). ``os.chown`` is POSIX-only."""
+    """Set the socket to root:agent ``0660``. ``os.chown`` is POSIX-only."""
     os.chmod(path, 0o660)
     chown = getattr(os, "chown", None)
     if chown is not None:
@@ -327,7 +327,7 @@ def _own_socket(path: str, gid: int) -> None:
 
 
 def bind_socket(path: str, *, socket_factory=socket.socket, own=_own_socket) -> socket.socket:
-    """Create the helper's listening AF_UNIX socket at ``path`` (T5 §4).
+    """Create the helper's listening AF_UNIX socket at ``path``.
 
     A stale socket file from a previous run is unlinked first, then ``bind`` + ``listen``, then
     the socket is set to root:agent ``0660`` — the bridge (account ``agent``) connects by
@@ -391,11 +391,11 @@ def _serve_one(connection, roots: list[str], *, spawn=default_spawn) -> None:
 
 def serve(socket_path: str, roots: list[str], *, server_factory=bind_socket,
           spawn=default_spawn) -> None:
-    """Bind the helper socket and serve requests until killed (T5 §4).
+    """Bind the helper socket and serve requests until killed.
 
     One connection is one short transaction (read a request, act, reply, close), handled
     serially — a per-mount helper needs no concurrency. ``server_factory`` is injectable so the
-    accept loop is unit-tested without AF_UNIX; ``spawn`` is threaded to :func:`handle`.
+    accept loop is unit-tested without AF_UNIX; ``spawn`` is threaded to:func:`handle`.
     """
     server = server_factory(socket_path)
     try:

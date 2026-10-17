@@ -1,4 +1,4 @@
-"""First server plugin: give AionUi the model list ACP will not advertise (T24).
+"""First server plugin: give AionUi the model list ACP will not advertise.
 
 openclaw's ACP gateway hardcodes its ``configOptions`` whitelist and advertises no
 ``category: "model"`` entry, so AionUi's model dropdown is empty. This plugin fills it in
@@ -7,10 +7,10 @@ into openclaw's own ``/model`` commands.
 
 The four command texts are openclaw's, so they are fixed here on purpose::
 
-    /model list                 the providers
-    /models <provider>          one provider's models
-    /model status               the model in use
-    /model <provider>/<model>   switch
+    /model list the providers
+    /models <provider> one provider's models
+    /model status the model in use
+    /model <provider>/<model> switch
 
 Everything runs synchronously on the ``session/new`` / ``session/load`` reply and when the
 host picks a model. The plugin's own commands and every frame they produce — notifications
@@ -33,7 +33,7 @@ MODEL_COMMAND = "/model"
 LIST_COMMAND = "/model list"
 STATUS_COMMAND = "/model status"
 
-# The three session-opening methods whose frame carries the (already mapped) session cwd (T31).
+# The three session-opening methods whose frame carries the (already mapped) session cwd.
 SESSION_METHODS = frozenset({"session/new", "session/load", "session/resume"})
 # The banner's placeholder token: ``__PATH__`` / ``__WORKING_DIRECTORY__`` / …
 NAME_PLACEHOLDER = re.compile(r"__[A-Z][A-Z0-9_]*__")
@@ -52,7 +52,7 @@ PERMISSION_OPTIONS = (
 PERMISSION_VALUES = frozenset(value for value, _ in PERMISSION_OPTIONS)
 PERMISSION_TIMEOUT = 10.0
 
-# The banner is read from this file at runtime (T29): editing the wording is editing the file,
+# The banner is read from this file at runtime: editing the wording is editing the file,
 # never this module. It ships with the package (``resources/`` under ``src``).
 PROMPT_RESOURCE = Path(__file__).resolve().parent.parent / "resources" / "prompt_aionui_openclaw_adapter.txt"
 RULES_MARKER = "[Assistant Rules]"
@@ -106,7 +106,7 @@ def _providers(text: str) -> list[str]:
     """The provider on each line: the first whitespace-separated word after the bullet.
 
     openclaw prints ``- provider-name (1)`` (a trailing count), so a
-    whole-line-must-be-a-bare-token rule sees nothing (T27). Hint lines (``Use: /models
+    whole-line-must-be-a-bare-token rule sees nothing. Hint lines (``Use: /models
     <provider>``, ``Switch: /model <provider>/<model>``) are skipped by their colon.
     """
     found: list[str] = []
@@ -126,7 +126,7 @@ def _models(text: str, provider: str) -> list[str]:
     openclaw's model page also carries a header (``… — showing 1-1 of 1 (page 1/1)``) and
     hint/footer lines (``Switch: /model <provider/model>``, ``All: …``); a "any X/Y on the
     line is a model" rule turned the ``<provider/model>`` placeholder and ``1/1`` into fake
-    dropdown entries (T29), so only real bulleted rows count.
+    dropdown entries, so only real bulleted rows count.
     """
     found: list[str] = []
     prefix = f"{provider}/"
@@ -156,7 +156,7 @@ def _current_model(text: str) -> str:
 
 
 def _prompt_block() -> str:
-    """The banner text, read fresh from the resource file each time (T29). '' if unreadable."""
+    """The banner text, read fresh from the resource file each time. '' if unreadable."""
     try:
         return PROMPT_RESOURCE.read_text(encoding="utf-8")
     except (OSError, UnicodeDecodeError):
@@ -164,7 +164,7 @@ def _prompt_block() -> str:
 
 
 def _fill_placeholder(block: str, cwd: str) -> str | None:
-    """Replace the banner's placeholder token(s) with the session's directory (T31).
+    """Replace the banner's placeholder token(s) with the session's directory.
 
     The placeholder is the ``__NAME__`` token the file carries (the task book called it
     ``__PATH__``; the shipped file uses ``__WORKING_DIRECTORY__``). The surrounding text —
@@ -193,7 +193,7 @@ def _mode_option(value: str) -> dict:
 
 
 def _mode_update(session_id: str, mode_id: str) -> str:
-    """The ``current_mode_update`` notification AionUi reads after a mode change (T45)."""
+    """The ``current_mode_update`` notification AionUi reads after a mode change."""
     return json.dumps(
         {"jsonrpc": "2.0", "method": "session/update",
          "params": {"sessionId": session_id,
@@ -202,7 +202,7 @@ def _mode_update(session_id: str, mode_id: str) -> str:
 
 
 def _modes_slot(value: str) -> dict:
-    """The ACP ``modes`` slot carrying our five permission modes (T48)."""
+    """The ACP ``modes`` slot carrying our five permission modes."""
     return {
         "currentModeId": value,
         "availableModes": [{"id": item, "name": label} for item, label in PERMISSION_OPTIONS],
@@ -215,7 +215,7 @@ _KEYED_BARE_RE = re.compile(r'("?(?:token|password|apiKey)"?\s*[:=]\s*)([^\s,}"]
 
 
 def _sanitize(text: str) -> str:
-    """Blank out secrets before a line reaches the log (T50): ``sk-…`` and keyed values."""
+    """Blank out secrets before a line reaches the log: ``sk-…`` and keyed values."""
     text = _SECRET_RE.sub("sk-***", text)
     text = _KEYED_QUOTED_RE.sub(r'\1"***"', text)
     return _KEYED_BARE_RE.sub(r"\1***", text)
@@ -229,7 +229,7 @@ def _first_line(text: str) -> str:
 
 
 def _try_json(text: str):
-    """The CLI's JSON reply, or ``None`` when the output is not JSON (T50)."""
+    """The CLI's JSON reply, or ``None`` when the output is not JSON."""
     try:
         return json.loads(text)
     except (ValueError, UnicodeDecodeError):
@@ -237,7 +237,7 @@ def _try_json(text: str):
 
 
 def _error_type(payload) -> str:
-    """``error.type`` from a CLI JSON reply, for a one-glance diagnosis (T50)."""
+    """``error.type`` from a CLI JSON reply, for a one-glance diagnosis."""
     if isinstance(payload, dict):
         error = payload.get("error")
         if isinstance(error, dict) and isinstance(error.get("type"), str):
@@ -256,7 +256,7 @@ def _permission_ok(payload) -> bool:
 
 
 def _close_transport(proc) -> None:
-    """Close a finished subprocess's transport (T35; the same shape as ``session.py`` T17-S3).
+    """Close a finished subprocess's transport (the same shape as ``session.py`` S3).
 
     ``asyncio.subprocess.Process`` has no public ``close()``; leaving the transport for GC
     makes the interpreter print a ResourceWarning traceback ("I/O operation on closed pipe")
@@ -275,16 +275,16 @@ class AionuiOpenclawAdapter:
         self._session_id = ""
         self._current = ""
         self._option: dict | None = None
-        self._injected = False     # T29: the banner goes in at most once per session
-        # T31: the session's absolute working directory on the server, remembered from the
+        self._injected = False     # The banner goes in at most once per session
+        # The session's absolute working directory on the server, remembered from the
         # ``session/new|load|resume`` frame the bridge already mapped (``_for_agent``).
         self._cwd = ""
-        # T33: the openclaw session key and the permission-mode state.
+        # The openclaw session key and the permission-mode state.
         self._session_key = ""
         self._permission = "default"       # last value openclaw confirmed
         self._pending_permission: str | None = None
-        self._previous_permission: str | None = None   # T40: revert target if the patch fails
-        self._config_options: list | None = None       # T40: last session reply's options
+        self._previous_permission: str | None = None   # Revert target if the patch fails
+        self._config_options: list | None = None       # Last session reply's options
         self._permission_retry = False
         self._inflight: set = set()        # host prompt ids sent but not yet answered
 
@@ -309,7 +309,7 @@ class AionuiOpenclawAdapter:
         if not self._session_id:
             return None
         if self._pending_permission is not None:
-            # T52: this reply brought (or let us resolve) the session key — send the patch
+            # This reply brought (or let us resolve) the session key — send the patch
             # that was waiting.
             await self._flush_permission(ctx)
         changed = False
@@ -323,14 +323,14 @@ class AionuiOpenclawAdapter:
             ctx.log(f"mode option failed ({type(exc).__name__}); leaving the reply unchanged")
         options = result.get("configOptions")
         if isinstance(options, list):
-            # T40: keep this reply's option list so a failed patch can notify the host with it.
+            # Keep this reply's option list so a failed patch can notify the host with it.
             self._config_options = json.loads(json.dumps(options))
         if not changed:
             return None
         return json.dumps(message, separators=(",", ":"), ensure_ascii=False)
 
     def _learn_session_id(self, message: dict, ctx) -> None:
-        """Remember the ACP session id from any frame that carries one (T59).
+        """Remember the ACP session id from any frame that carries one.
 
         A ``session/load`` reply has no ``sessionId`` (only ``session/new`` does), so on a
         reconnect the id has to come from a frame's ``params.sessionId``. Only fills an empty
@@ -345,7 +345,7 @@ class AionuiOpenclawAdapter:
             ctx.log(f"session id learned: {sid} (via frame)")
 
     async def _remember_session_key(self, message: dict, result: dict, ctx) -> None:
-        """The gateway session key the CLI patch needs (T33/T52).
+        """The gateway session key the CLI patch needs.
 
         ``_meta.sessionKey`` is authoritative. Without it the key is resolved through the
         CLI's own ``sessions list`` (the entry whose ``sessionId`` is ours); the bare ACP
@@ -353,7 +353,7 @@ class AionuiOpenclawAdapter:
         phantom session for it and report ok.
         """
         self._session_id = result["sessionId"]
-        self._session_key = ""     # T55/M1: re-resolve the key for every session reply
+        self._session_key = ""     # Re-resolve the key for every session reply
         for holder in (result, message):
             meta = holder.get("_meta")
             if isinstance(meta, dict) and isinstance(meta.get("sessionKey"), str) and meta["sessionKey"]:
@@ -368,7 +368,7 @@ class AionuiOpenclawAdapter:
             ctx.log("session key missing in the session reply; sessions list could not resolve it")
 
     async def _resolve_key_via_list(self, ctx) -> str:
-        """Ask ``sessions list`` for the key whose ``sessionId`` is ours (T52); "" on failure."""
+        """Ask ``sessions list`` for the key whose ``sessionId`` is ours; "" on failure."""
         command = self._config(ctx).get("openclaw_command")
         if not isinstance(command, str) or not command.strip():
             return ""
@@ -400,7 +400,7 @@ class AionuiOpenclawAdapter:
         for entry in sessions:
             if isinstance(entry, dict):
                 key = entry.get("key")
-                # T57: pair by the key's tail (``…:acp-bridge:<sessionId>``); the entry's own
+                # Pair by the key's tail (``…:acp-bridge:<sessionId>``); the entry's own
                 # ``sessionId`` field is a different uuid and never matches.
                 if isinstance(key, str) and key.endswith(":" + self._session_id):
                     return key
@@ -428,9 +428,9 @@ class AionuiOpenclawAdapter:
         return True
 
     async def _take_over_update(self, message: dict, ctx) -> object:
-        """Rewrite the agent's own mode updates so the host keeps seeing our five (T48).
+        """Rewrite the agent's own mode updates so the host keeps seeing our five.
 
-        Also learns the gateway session key from ``session_info_update`` (T57) — openclaw
+        Also learns the gateway session key from ``session_info_update`` — openclaw
         sends it right after ``session/new`` *and* after ``session/load`` (reconnect).
         """
         if not self._permission_enabled(ctx):
@@ -461,7 +461,7 @@ class AionuiOpenclawAdapter:
         return None
 
     async def _learn_key_from_update(self, update: dict, ctx) -> None:
-        """Take the gateway key out of a ``session_info_update`` (T57).
+        """Take the gateway key out of a ``session_info_update``.
 
         Only the ``kind:"direct"`` value (``agent:<agentId>:acp-bridge:<sessionId>``) is the
         patch key; the earlier ``kind:"unknown"`` ``acp-bridge:<uuid>`` half-value is ignored.
@@ -542,7 +542,7 @@ class AionuiOpenclawAdapter:
             return None
         block = _fill_placeholder(block, self._cwd)
         if block is None:
-            # T31: without a session directory we cannot fill the placeholder; never emit
+            # Without a session directory we cannot fill the placeholder; never emit
             # the literal token, so skip the banner entirely.
             return None
         for part in prompt:
@@ -604,7 +604,7 @@ class AionuiOpenclawAdapter:
             separators=(",", ":"), ensure_ascii=False))
         return DROP
 
-    # -- session mode (T33/T38): bypass the ACP surface via openclaw's CLI --------------
+    # -- session mode: bypass the ACP surface via openclaw's CLI --------------
 
     @staticmethod
     def _config(ctx) -> dict:
@@ -612,7 +612,7 @@ class AionuiOpenclawAdapter:
         return config if isinstance(config, dict) else {}
 
     def _permission_enabled(self, ctx) -> bool:
-        """The CLI path comes from config (T33); no default path, and no URL switch (T46)."""
+        """The CLI path comes from config; no default path, and no URL switch."""
         command = self._config(ctx).get("openclaw_command")
         return isinstance(command, str) and bool(command.strip())
 
@@ -621,7 +621,7 @@ class AionuiOpenclawAdapter:
         value = params.get("value")
         if value not in PERMISSION_VALUES or not self._permission_enabled(ctx):
             return None                    # not ours / feature off: pass the frame through
-        # T40/T43: ``previous`` is the last **confirmed** value; ``_permission`` only ever moves
+        # ``previous`` is the last **confirmed** value; ``_permission`` only ever moves
         # on a confirmed patch, so a second in-flight request must not see the first request's
         # wish as its revert target.
         self._previous_permission = self._permission
@@ -639,7 +639,7 @@ class AionuiOpenclawAdapter:
         return DROP
 
     async def _handle_set_mode(self, frame: str, message: dict, ctx) -> object:
-        """``session/set_mode``: AionUi's other way to pick a permission mode (T45).
+        """``session/set_mode``: AionUi's other way to pick a permission mode.
 
         Only our five values are ours; a thought level (``off``/``medium``/…) passes straight
         through. ACP's set_mode is a request, so it is answered (an empty result) and swallowed
@@ -673,14 +673,14 @@ class AionuiOpenclawAdapter:
             self._permission_retry = False
             ctx.log(_sanitize(f"permission mode applied: {value}"))
         elif outcome == "defer-key":
-            pass                           # T55/S1: keep the request; no retry budget spent
+            pass                           # Keep the request; no retry budget spent
         elif outcome == "defer" and not self._permission_retry:
             # openclaw said a run is still active (our "in flight" view missed one): keep the
             # request and retry once, when the next turn's result lands.
             self._permission_retry = True
         else:
             # Final failure (or a second defer): fall back to the value we had before the
-            # request and tell the host, so its control shows the old mode again (T40).
+            # request and tell the host, so its control shows the old mode again.
             self._pending_permission = None
             self._permission_retry = False
             if self._previous_permission is not None:
@@ -708,9 +708,9 @@ class AionuiOpenclawAdapter:
     async def _dispatch_permission(self, ctx, value: str) -> str:
         """Run ``openclaw gateway call sessions.patch`` once. "ok" | "defer" | "fail"."""
         if not self._session_key:
-            # T52: without a resolved session key the patch would go out with an empty key and
+            # Without a resolved session key the patch would go out with an empty key and
             # the CLI would fail (or, worse, create a phantom session). Keep it stored until
-            # the session reply resolves the key. "defer-key" (T55/S1) is its own outcome so it
+            # the session reply resolves the key. "defer-key" is its own outcome so it
             # never spends the one retry the "active run" path owns.
             ctx.log("permission mode deferred: session key not resolved yet")
             return "defer-key"
@@ -721,7 +721,7 @@ class AionuiOpenclawAdapter:
         mode = None if value == "default" else value
         params = json.dumps({"key": self._session_key, "permissionMode": mode},
                             separators=(",", ":"))
-        # No URL switch at all (T46): the CLI may only drive the local gateway it is
+        # No URL switch at all: the CLI may only drive the local gateway it is
         # configured with.
         argv = [command, "gateway", "call", "sessions.patch", "--json", "--params", params]
         try:

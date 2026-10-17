@@ -5,7 +5,7 @@ import importlib.util
 import sys
 from pathlib import Path
 
-# CPython compiles and writes this module's own .pyc *before* running the body
+# CPython compiles and writes this module's own.pyc *before* running the body
 # below, so a flag set here cannot protect this file - it only protects modules
 # imported afterwards. Both halves are needed, because every entry point (the two
 # shims, ``-m remote_acp_bridge.client``, devrun, the tests) has to leave the

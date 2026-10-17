@@ -59,7 +59,7 @@ INJECT_FALLBACK_SECONDS = 5.0
 FATAL_STATUSES = {401: 4, 403: 5, 404: EXIT_SESSION_GONE, 410: EXIT_SESSION_GONE}
 EXIT_TLS_REJECTED = 6
 # The server refused the handshake because our workspace could not be mounted or gated
-# (T1 §3): a 412 for the mount/gate and a 400 for a malformed Config header. The descriptor,
+#: a 412 for the mount/gate and a 400 for a malformed Config header. The descriptor,
 # credentials, device or share is wrong, and a reconnect would only ask it to mount the same
 # thing again. Fatal, with the reason, never silent.
 EXIT_WORKSPACE_REFUSED = 7
@@ -74,7 +74,7 @@ def log(msg: str) -> None:
     print(f"[remote-acp-client] {msg}", file=sys.stderr, flush=True)
 
 
-# Severity numbers matching ``LoggingConfig.LEVELS`` (T23): the client's own lines are INFO,
+# Severity numbers matching ``LoggingConfig.LEVELS``: the client's own lines are INFO,
 # its problem lines ERROR, and the frame trace DEBUG.
 LOG_DEBUG = 10
 LOG_INFO = 20
@@ -94,7 +94,7 @@ def client_ssl(target: ServerTarget, insecure: bool) -> ssl.SSLContext | None:
     return ssl.create_default_context()
 
 
-# -- T93: certificate pinning ------------------------------------------------------------
+# -- Certificate pinning ------------------------------------------------------------
 #
 # ``[servers.tls].fingerprint`` is a pin: verify the peer's certificate DER against
 # ``base64(SHA-256(DER))`` **before the WebSocket upgrade leaves the machine** — that request
@@ -107,21 +107,21 @@ def client_ssl(target: ServerTarget, insecure: bool) -> ssl.SSLContext | None:
 
 
 class FingerprintRejected(Exception):
-    """The peer certificate did not match ``[servers.tls].fingerprint`` (T93)."""
+    """The peer certificate did not match ``[servers.tls].fingerprint``."""
 
 
 def fingerprint_of_der(der: bytes) -> str:
-    """``base64(SHA-256(der))`` — the form the pin is written in (T93)."""
+    """``base64(SHA-256(der))`` — the form the pin is written in."""
     return base64.b64encode(hashlib.sha256(der).digest()).decode("ascii")
 
 
 def fingerprint_matches(expected: str, der: bytes) -> bool:
-    """Compare the pin to a peer certificate's DER, constant-time (T93)."""
+    """Compare the pin to a peer certificate's DER, constant-time."""
     return hmac.compare_digest(fingerprint_of_der(der), expected)
 
 
 def pinned_connection_class(expected: str, failures: list) -> type:
-    """A ``ClientConnection`` that checks the pin before anything is written (T93).
+    """A ``ClientConnection`` that checks the pin before anything is written.
 
     On a mismatch (or a certificate we cannot read at all — never a silent pass) it records
     the English reason and aborts the transport, so ``connect()`` fails without the upgrade
@@ -180,7 +180,7 @@ def observed_acp_session_id(frame: str) -> str | None:
 
 
 def frame_trace_enabled() -> bool:
-    """``RAB_TRACE=1`` mirrors every frame through the client onto stderr (T27)."""
+    """``RAB_TRACE=1`` mirrors every frame through the client onto stderr."""
     return os.environ.get("RAB_TRACE", "") == "1"
 
 
@@ -193,7 +193,7 @@ CWD_METHODS = frozenset({"session/new", "session/load", "session/resume"})
 
 def normalize_uplink(frame: str, *, pass_mcp: collections.abc.Sequence[str] = ("*",)
                      ) -> tuple[str, str]:
-    """Rewrite one uplink frame's ``mcpServers`` the way the operator opted into (T67).
+    """Rewrite one uplink frame's ``mcpServers`` the way the operator opted into.
 
     Returns ``(frame, note)``. Deliberately narrow, so the bridge keeps its "never interpret
     ACP" stance: ``pass_mcp`` containing ``*`` (the default) returns the frame **byte for
@@ -235,15 +235,15 @@ def normalize_uplink(frame: str, *, pass_mcp: collections.abc.Sequence[str] = ("
 
 
 class ShareLinkError(Exception):
-    """The host's session cwd could not be linked into this client's share (T2 §1)."""
+    """The host's session cwd could not be linked into this client's share."""
 
 
 def share_link_name(cwd: str) -> str:
-    """The link name for a host cwd inside the share: the cwd's own last segment (T2 §1).
+    """The link name for a host cwd inside the share: the cwd's own last segment.
 
     The AionUi project folder name is the natural stable name, and the whole share is one
     namespace, so two cwds whose last segment is the same are the same project and must map to
-    the same link — no hash, no suffix (T2 §1). Falls back to ``workspace`` for a cwd with no
+    the same link — no hash, no suffix. Falls back to ``workspace`` for a cwd with no
     last segment (e.g. a filesystem root).
     """
     return os.path.basename(os.path.normpath(cwd)) or "workspace"
@@ -265,7 +265,7 @@ def _make_dir_link(target: str, link: str) -> None:
 
 
 def ensure_share_link(share_dir: str, cwd: str) -> str:
-    """Link ``cwd`` into ``share_dir`` idempotently; return the link **name** (T2 §1).
+    """Link ``cwd`` into ``share_dir`` idempotently; return the link **name**.
 
     The name is the cwd's last segment. An entry of that name already present in the share is
     reused as-is — same name means the same project — so a reconnect or a second session for
@@ -287,7 +287,7 @@ def ensure_share_link(share_dir: str, cwd: str) -> str:
 
 
 def seed_workspace_sentinel(workspace: ClientWorkspaceConfig | None) -> None:
-    """Seed ``<share_dir>/<SENTINEL_NAME>`` with the token before the first handshake (T20).
+    """Seed ``<share_dir>/<SENTINEL_NAME>`` with the token before the first handshake.
 
     The server's gate reads that fixed file from *its* mount of the same share, so the client
     writes it once, and only when this server carries a ``[servers.workspace]`` (branch A). An
@@ -312,7 +312,7 @@ def map_cwd_into_share(frame: str, *, share_dir: str) -> tuple[str, str]:
 
     Only the three session-opening methods are touched, only their ``cwd``, and only when it
     is a non-empty string; anything else goes out byte-for-byte. Returns ``(frame, note)``,
-    with an empty note when nothing changed (T2 §1).
+    with an empty note when nothing changed.
     """
     if not share_dir:
         return frame, ""
@@ -360,7 +360,7 @@ def _read_line(stream, limit: int) -> tuple[bytes, int]:
     Returns ``(line, oversize_bytes)``: ``line`` is the raw line (possibly without
     a terminator at EOF), ``oversize_bytes`` is the **frame length** of a rejected
     line — the terminator is excluded, so an over-long line is reported with the
-    same number the send gate would have used (T4-S3). ``line`` is then empty.
+    same number the send gate would have used. ``line`` is then empty.
     An over-long line is drained up to its terminator so the stream stays in sync
     instead of desynchronising the host's framing.
     """
@@ -408,13 +408,13 @@ class BridgeClient:
         self.share_dir = share_dir
         # The share account (client workspace `username`) and the host's own cwd per request:
         # the client uses both to translate the server's cwd error into the final host-facing
-        # text (T8 §3C).
+        # text.
         self.workspace_account = workspace_account
         self._host_cwd_by_id: dict = {}
         self._last_host_cwd = ""
         self.path = f"/agents/{agent}"
         self.url = target.url(self.path)
-        # The workspace descriptor travels in the handshake Config header (T1 §2), sent fresh
+        # The workspace descriptor travels in the handshake Config header, sent fresh
         # on every connect so a reconnect re-proves its mount. None when no [workspace] section
         # is configured. The password is inside it and is never logged (headers are not traced).
         self._workspace = workspace
@@ -430,7 +430,7 @@ class BridgeClient:
         self._frames_rejected = 0
         self.inject_fallback_seconds = INJECT_FALLBACK_SECONDS
         self.pass_mcp = target.pass_mcp
-        # This server's log sink (T23): `[servers.logging]`. No file ⇒ stderr only, exactly
+        # This server's log sink: `[servers.logging]`. No file ⇒ stderr only, exactly
         # as before. A named file gets a level-filtered mirror of the client's lines and, at
         # ``debug``, the frame trace too — with one global, cross-direction sequence number.
         self._log_file = target.logging.file
@@ -459,7 +459,7 @@ class BridgeClient:
         self._mirror_line(LOG_ERROR, msg)
 
     def _mirror_line(self, severity: int, msg: str) -> None:
-        """Mirror one client line into this server's log file (T23). stderr already carries
+        """Mirror one client line into this server's log file. stderr already carries
         it, so a broken sink does not duplicate it onto stderr here — only traces fall back."""
         if not self._log_enabled or not self._log_file or severity < self._log_level:
             return
@@ -516,7 +516,7 @@ class BridgeClient:
         return auth_headers(self.key, session=self.session_id, workspace=self._workspace)
 
     async def _open(self):
-        # T93: with a pin configured, the check rides on the documented create_connection
+        # With a pin configured, the check rides on the documented create_connection
         # hook (see the module's pinning note). Without one this is byte-for-byte the old
         # call, so a config that never set ``fingerprint`` behaves exactly as before.
         kwargs: dict = {}
@@ -589,7 +589,7 @@ class BridgeClient:
         return "server-ended" if server_ended else "retry"
 
     def _uplink(self, frame: str) -> str:
-        """The one place a host frame is touched on its way up (T27, T2 §1)."""
+        """The one place a host frame is touched on its way up."""
         if self.share_dir:
             self._remember_host_cwd(frame)
         prepared, changed = normalize_uplink(frame, pass_mcp=self.pass_mcp)
@@ -665,7 +665,7 @@ class BridgeClient:
         self._pending_out.append(frame)
 
     def _remember_host_cwd(self, frame: str) -> None:
-        """Record the host's own cwd per request id (T8 §3C).
+        """Record the host's own cwd per request id.
 
         The client knows the folder AionUi chose (a local path); the server only knows the
         mounted share path. Remembering it lets the client name the folder accurately when it
@@ -692,7 +692,7 @@ class BridgeClient:
                 pass
 
     def _cwd_error_text(self, server_message: str, host_cwd: str) -> str:
-        """The final host-facing text for a server cwd error (T8 §3C).
+        """The final host-facing text for a server cwd error.
 
         The server names the reason; the client supplies the folder (its own local path) and,
         for a permission failure, the share account to grant access to. Verbatim permission
@@ -710,7 +710,7 @@ class BridgeClient:
         return server_message
 
     def _translate_cwd_error(self, frame: str) -> str:
-        """Rewrite a server cwd error's message for the host (T8 §3C); else return it as-is.
+        """Rewrite a server cwd error's message for the host; else return it as-is.
 
         Gated on the **request id**: only an error whose id matches a session-opening request
         this client recorded is ours to rewrite. Anything else — a different id, a foreign
@@ -795,14 +795,14 @@ class BridgeClient:
                 if status >= 500:
                     # A 5xx carries the server's own reason (a refused session cwd, an
                     # agent that will not start). Going quiet about it turns a permanent
-                    # shape problem into an endless silent reconnect (T35-S3), so this
+                    # shape problem into an endless silent reconnect, so this
                     # goes through ``_problem`` and survives --quiet.
                     self._problem(f"handshake refused: HTTP {status} {reason}"
                                   + (f": {detail}" if detail else "") + ", retrying")
                 else:
                     self._say(f"handshake failed: HTTP {status} {reason}, retrying")
             except FingerprintRejected as exc:
-                # T93: a pin is a hard stop. The upgrade was never sent, so the server is
+                # A pin is a hard stop. The upgrade was never sent, so the server is
                 # simply not the one this config trusts — no retry, no reconnect.
                 self._problem(f"{exc}. Check [servers.tls].fingerprint against the real server.")
                 return EXIT_TLS_REJECTED
@@ -865,11 +865,11 @@ def refusal_reason(exc: InvalidStatus) -> str:
 
     ``Bridge._reject`` puts the real cause in the body ("cannot create session cwd
     …"), and without it a refusal that never becomes fatal shows up as a bare
-    ``HTTP 500 …, retrying`` forever (T35-S3).
+    ``HTTP 500 …, retrying`` forever.
 
     ``websockets`` hands the body over as a ``bytearray``, not ``bytes``, so both have to
     be decoded — otherwise the line the operator is supposed to read becomes
-    ``bytearray(b'…')`` with escaped bytes for anything non-ASCII (T38-R16).
+    ``bytearray(b'…')`` with escaped bytes for anything non-ASCII.
     """
     body = getattr(exc.response, "body", b"") or b""
     if isinstance(body, (bytes, bytearray)):
@@ -881,7 +881,7 @@ def refusal_reason(exc: InvalidStatus) -> str:
 
 
 def resolve_client_key(cfg: ClientConfig, target: ServerTarget) -> str:
-    """The key for the server we are connecting to (T53).
+    """The key for the server we are connecting to.
 
     Each [[servers]] entry carries its own inline key; the client-wide ``keys_file`` is
     abolished. ``load`` already guarantees every server has a key, so this never has to
@@ -922,7 +922,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
-    # The handshake Config header carries the share password (T1 §2), and websockets' DEBUG
+    # The handshake Config header carries the share password, and websockets' DEBUG
     # trace logs request headers. Pin the library loggers regardless of how the launching host
     # has configured root logging.
     for name in ("websockets", "websockets.client"):
@@ -960,7 +960,7 @@ def cli_entry(argv: list[str] | None = None) -> int:
 
     The stdin reader is a daemon thread blocked in ``readline()``. Letting CPython
     finalize with it alive aborts the process on Windows with an access violation
-    (0xC0000005, "Fatal Python error: _enter_buffered_busy ... possibly due to
+    (0xC0000005, "Fatal Python error: _enter_buffered_busy... possibly due to
     daemon threads"), which swallows our exit code. Everything is flushed above,
     so leave via ``os._exit``.
     """

@@ -1,6 +1,6 @@
-"""Built-in server plugins (T24).
+"""Built-in server plugins.
 
-``[[agents]].plugins`` names entries in :data:`PLUGINS`; an unknown name is a configuration
+``[[agents]].plugins`` names entries in:data:`PLUGINS`; an unknown name is a configuration
 error so a typo never silently disables a plugin. Plugin code ships with the package under
 ``plugins/*.py``.
 """

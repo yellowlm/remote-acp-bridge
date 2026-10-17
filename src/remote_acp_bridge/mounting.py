@@ -1,4 +1,4 @@
-"""Pure, side-effect-free primitives for the per-client workspace mount (T53 §3).
+"""Pure, side-effect-free primitives for the per-client workspace mount.
 
 Everything the *bridge* (an unprivileged ``agent`` process) needs in order to ask the
 privileged ``remote-acp-helper`` to mount a client's share, and everything the helper
@@ -30,14 +30,14 @@ OP_UMOUNT = "umount"
 FS_TYPES = ("cifs", "nfs4")
 DEFAULT_PROBE_PORT = {"cifs": 445, "nfs4": 2049}
 
-# Upper bound for a client hostname (T63-N5): the total length a DNS name may carry. Every
+# Upper bound for a client hostname: the total length a DNS name may carry. Every
 # hostname-derived text on the wire (refusal reason, log line, mount path, helper argv) is
 # bounded by the cap in sanitize_hostname, so this is the one number that bounds them all.
 MAX_HOSTNAME_LENGTH = 253
 
 # An option token is ONE mount flag: ``soft`` or ``uid=agent``. Since mount is execve'd
 # (no shell), the residual risk is mount(8)/the fs driver reinterpreting the string, so the
-# alphabet is tight and a **comma is forbidden** (T55-M1): a comma is mount(8)'s own option
+# alphabet is tight and a **comma is forbidden**: a comma is mount(8)'s own option
 # separator, so an item carrying one smuggles extra options past any per-item name check
 # (``soft,credentials=/etc/shadow``). Items are flattened to one flag each before they are
 # checked, so the returned list is exactly the set of options mount will see.
@@ -45,15 +45,15 @@ _OPTION_RE = re.compile(r"^[A-Za-z0-9._:/+=-]+$")
 # Credentials are helper-owned; a caller must never try to pass them in options — under any
 # name, in any position of the list.
 _BANNED_OPTION_NAMES = ("credentials", "password", "username", "domain")
-# The mounted share's owner is the *server's* choice (T8): the client may not name uid=/gid=,
+# The mounted share's owner is the *server's* choice: the client may not name uid=/gid=,
 # and any it sends is dropped here rather than refused (an old client.toml keeps working).
 _OWNER_OPTION_NAMES = ("uid", "gid")
-# A uid/gid the server puts in ``-o uid=…``: a plain user/group name or numeric id (T8).
+# A uid/gid the server puts in ``-o uid=…``: a plain user/group name or numeric id.
 _OWNER_RE = re.compile(r"^[A-Za-z0-9._-]+$")
 
 
 def validate_owner_token(label: str, value: str) -> str:
-    """Check a ``mount_uid``/``mount_gid`` value is a plain owner token; return it (T8)."""
+    """Check a ``mount_uid``/``mount_gid`` value is a plain owner token; return it."""
     if value and not _OWNER_RE.match(value):
         raise MountInputError(f"{label} must be a plain user/group name or id")
     return value
@@ -65,7 +65,7 @@ class MountInputError(ValueError):
 
 # A refusal has to be English on every host, so the OS `strerror` is never echoed —
 # `str(OSError)` renders it in the machine's locale (a Chinese Windows answers WinError 5
-# with the localized words for "access denied", T48/T55-M4-measured), and that string
+# with the localized words for "access denied", measured), and that string
 # travels on the handshake refusal and into the log. Map the errno we know to fixed English,
 # fall back to the ASCII errno NAME, and only then the exception class (also ASCII). Lives
 # here rather than in workspace.py because both the bridge and the root helper need one table.
@@ -86,7 +86,7 @@ _ERRNO_EN = {
     errno.ENETUNREACH: "network is unreachable",
     errno.EOPNOTSUPP: "operation not supported",
     errno.ENOTSUP: "operation not supported",
-    # Listener setup (T59, after A6 routed these through the table): without these the
+    # Listener setup (after A6 routed these through the table): without these the
     # wording collapses from a sentence to the bare errno name and an operator loses the
     # meaning — e.g. an IPv6-less box degrading to a warning reads "cannot bind: address
     # family not supported by protocol", not "cannot bind: EAFNOSUPPORT (errno=97)".
@@ -105,7 +105,7 @@ def english_reason(exc: BaseException) -> str:
     Order matters: the errno table first (that is what beats a localized ``strerror``),
     then the ASCII errno name, then — only when the message is already ASCII — the text of
     the exception itself, because the bridge raises ``OSError`` with its own English
-    sentence attached (``cannot create session cwd ...``) and throwing that away would trade
+    sentence attached (``cannot create session cwd...``) and throwing that away would trade
     a leaked translation for a lost diagnosis. Anything non-ASCII with no errno degrades to
     the bare class name rather than putting local words on the wire.
     """
@@ -129,7 +129,7 @@ def sanitize_hostname(hostname: str) -> str:
     single-segment guarantee (``/``, ``\\``, NUL, other control bytes, or whitespace).
     A normal FQDN (dots, hyphens, alphanumerics, underscores) passes through unchanged.
 
-    Also ASCII-only and bounded in length (T63-N5), because this is the *one* place every
+    Also ASCII-only and bounded in length, because this is the *one* place every
     hostname-derived text passes through: the control-frame refusal reason, the log line,
     the mount path, and the helper's re-validation. The contract is that a refusal reason is
     plain English on the wire, and an interpolated client-supplied name would break it — a
@@ -163,8 +163,8 @@ def sanitize_hostname(hostname: str) -> str:
 def validate_device(fs_type: str, device: str) -> str:
     """Check a device string matches the form its ``fs_type`` requires; return it.
 
-    * ``cifs``  -> ``//host/share`` (optionally deeper: ``//host/share/sub``)
-    * ``nfs4``  -> ``host:/export``
+    * ``cifs`` -> ``//host/share`` (optionally deeper: ``//host/share/sub``)
+    * ``nfs4`` -> ``host:/export``
     """
     if fs_type not in FS_TYPES:
         raise MountInputError(f"unknown fs_type {fs_type!r}")
@@ -229,7 +229,7 @@ def validate_options(options: list[str]) -> list[str]:
     One item is ONE flag. A comma is mount(8)'s own option separator, so a caller who writes
     ``"soft,credentials=/etc/shadow"`` is asking for two flags in one list slot — and a name
     check that only reads up to the first ``=`` sees just the leading ``soft`` and lets the
-    credential through (T55-M1). So: split every item on commas first, then check each part
+    credential through. So: split every item on commas first, then check each part
     on its own — tight character class (no comma remains possible), no leading ``-`` (a
     smuggled flag), and no caller-supplied ``credentials``/``username``/``password``/``domain``
     under any name in any position. The returned list is exactly what mount will be given.
@@ -250,7 +250,7 @@ def validate_options(options: list[str]) -> list[str]:
             if name.lower() in _BANNED_OPTION_NAMES:
                 raise MountInputError("credential options are set by the helper, not the caller")
             if name.lower() in _OWNER_OPTION_NAMES:
-                continue          # owner comes from the server config (T8), never the caller
+                continue          # owner comes from the server config, never the caller
             cleaned.append(opt)
     return cleaned
 
@@ -278,11 +278,11 @@ def build_composed_options(fs_type: str, options: list[str], credentials_path: s
 def validate_mount_point_under_root(root: str, mount_point: str, resolve=None) -> str:
     """Assert ``mount_point`` is strictly inside ``root`` after path normalisation.
 
-    ``resolve`` defaults to :func:`os.path.realpath`; tests inject a fake to exercise the
+    ``resolve`` defaults to:func:`os.path.realpath`; tests inject a fake to exercise the
     ``..``/symlink-escape cases on a host with no POSIX filesystem. Mount paths are POSIX,
     so resolved separators are normalised to ``/`` first — the logic is identical on the
     Linux deployment and on a Windows box whose ``realpath`` yields backslashes. Returns
-    ``mount_point`` on success, raises :class:`MountInputError` otherwise.
+    ``mount_point`` on success, raises:class:`MountInputError` otherwise.
     """
     if resolve is None:
         import os.path as _p
@@ -307,14 +307,14 @@ def mount_point_for(root: str, hostname: str) -> str:
 
 
 def validate_mount_point_under_any_root(roots: list[str], mount_point: str, resolve=None) -> str:
-    """Assert ``mount_point`` is strictly inside at least one of ``roots`` (T4).
+    """Assert ``mount_point`` is strictly inside at least one of ``roots``.
 
     The helper's allowed roots come from the server config files (there may be several
     instances), so confinement is "under *some* configured root". The per-root checks are
     unchanged (:func:`validate_mount_point_under_root`: realpath, no ``..``, not equal to the
     root itself); a mount point that matches none — or a caller that picked a root itself — is
     refused. An empty ``roots`` is a refusal too (fail closed). Returns ``mount_point`` on
-    success, raises :class:`MountInputError` otherwise.
+    success, raises:class:`MountInputError` otherwise.
     """
     for root in roots:
         try:
@@ -325,7 +325,7 @@ def validate_mount_point_under_any_root(roots: list[str], mount_point: str, reso
 
 
 def validate_share_relative(value: str) -> str:
-    """A client's session cwd expressed **relative to its mounted share** (T1 §6A).
+    """A client's session cwd expressed **relative to its mounted share**.
 
     In branch A the client links the host's ``session/new`` cwd into its share and sends the
     server only the link name; the server joins it onto the session's mount point. Accept
@@ -346,7 +346,7 @@ def validate_share_relative(value: str) -> str:
 
 
 def join_share_path(mount_point: str, relative: str) -> str:
-    """``<mount_point>/<safe relative>`` (POSIX). Raises on an escaping value (T1 §6A)."""
+    """``<mount_point>/<safe relative>`` (POSIX). Raises on an escaping value."""
     return mount_point.rstrip("/") + "/" + validate_share_relative(relative)
 
 
@@ -354,7 +354,7 @@ def join_share_path(mount_point: str, relative: str) -> str:
 def build_mount_argv(fs_type: str, device: str, mount_point: str, options: list[str]) -> list[str]:
     """The fixed argv for ``mount``. Execve'd directly, never through a shell.
 
-    ``options`` is the already-composed flag list (see :func:`build_composed_options`), so
+    ``options`` is the already-composed flag list (see:func:`build_composed_options`), so
     the helper's own ``credentials=<temp file>`` is already in there — this function adds
     nothing, which keeps the argv derivation in one place.
     """

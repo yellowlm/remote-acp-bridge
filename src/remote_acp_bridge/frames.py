@@ -12,11 +12,11 @@ MAX_FRAME_BYTES = 16 * 1024 * 1024
 # The two WebSocket close codes, named once for the whole package (README §1.3). They
 # are the protocol contract the three modules share: the server sends them, the session
 # tears down with them, and the client decides "reconnect or not" on them — so the
-# numbers must not be spelled out in three places (T23-S3).
+# numbers must not be spelled out in three places.
 CLOSE_SESSION_END = 1000    # the session itself is over; a client must not reconnect
 CLOSE_RESUMABLE = 1001      # only this connection dropped; the session can be resumed
 
-# T8: a session cwd the bridge cannot use. The server answers the host request with a JSON-RPC
+# A session cwd the bridge cannot use. The server answers the host request with a JSON-RPC
 # error carrying CWD_ERROR_CODE and a message "<CWD_ERROR_PREFIX>: <one reason>"; the client
 # rewrites that message into the final host-facing text (its own local path + the share
 # account). The exact strings live here so the two binaries cannot drift apart.
@@ -27,13 +27,13 @@ CWD_REASON_NOT_FOUND = "the folder does not exist in the mounted share"
 CWD_REASON_NOT_READABLE = "the folder is not readable in the mounted share"
 CWD_REASON_NOT_DIRECTORY = "the path is not a directory in the mounted share"
 
-# T20/T21: the sentinel file name is a fixed convention shared by both binaries — the server's
+# The sentinel file name is a fixed convention shared by both binaries — the server's
 # gate reads it and the client seeds it. It lives here, a module **both** the client and the
 # server import, so the client's import closure never pulls in a server-only module just to
 # learn the name.
 SENTINEL_NAME = ".rab-workspace-token"
 
-# T64/T79: the variables the bridge puts into each agent subprocess's environment. They are
+# The variables the bridge puts into each agent subprocess's environment. They are
 # session-level runtime facts — who the client is, which IP family its connection used, and
 # which bridge session this is — fixed when the session's agent starts, not configuration.
 # The names live here so the server and the tests cannot drift apart.

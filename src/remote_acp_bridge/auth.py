@@ -1,17 +1,17 @@
-"""Handshake authentication for the authenticated WebSocket bridge (T1 §2).
+"""Handshake authentication for the authenticated WebSocket bridge.
 
 The handshake is a single ``GET`` upgrade. Authentication and the client's workspace
 descriptor both travel in request headers, all named ``X-Remote-ACP-Bridge-*``:
 
-    X-Remote-ACP-Bridge-AuthKey      the bridge key, plaintext (the transport is TLS)
-    X-Remote-ACP-Bridge-Timestamp    unix seconds
-    X-Remote-ACP-Bridge-Nonce        a random string, single use
-    X-Remote-ACP-Bridge-Session-Id   the uuid being resumed; absent for a new session
-    X-Remote-ACP-Bridge-Config       base64(json), always present; ``{}`` without workspace
+    X-Remote-ACP-Bridge-AuthKey the bridge key, plaintext (the transport is TLS)
+    X-Remote-ACP-Bridge-Timestamp unix seconds
+    X-Remote-ACP-Bridge-Nonce a random string, single use
+    X-Remote-ACP-Bridge-Session-Id the uuid being resumed; absent for a new session
+    X-Remote-ACP-Bridge-Config base64(json), always present; ``{}`` without workspace
 
 The server compares the key against every line of ``keys_file`` in constant time, checks
 the timestamp against the clock-skew window, and refuses a nonce it has already seen.
-There is no HMAC signature any more (T1): the key is sent in the clear under TLS, so a
+There is no HMAC signature any more: the key is sent in the clear under TLS, so a
 signature would add nothing.
 """
 
@@ -163,7 +163,7 @@ def decode_config(headers) -> dict:
 
 
 class KeyVerifier:
-    """Authenticates a handshake against every key in ``keys_file`` (T1 §2)."""
+    """Authenticates a handshake against every key in ``keys_file``."""
 
     def __init__(
         self,

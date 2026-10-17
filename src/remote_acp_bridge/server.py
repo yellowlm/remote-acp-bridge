@@ -83,12 +83,12 @@ from .workspace import (
 # idle + IDLE_POLL_SECONDS rather than up to twice the idle window.
 IDLE_POLL_SECONDS = 1.0
 
-# Threads the handshake workspace-gate may occupy at once (T50-S2). Small and separate
+# Threads the handshake workspace-gate may occupy at once. Small and separate
 # from the default executor the monitor uses, so hung-share gates queue here rather than
 # starving the monitor; the wait_for timeout still fails each one closed.
 WORKSPACE_GATE_WORKERS = 4
 
-# T14: before unmounting a share whose last session just left, wait up to this long for that
+# Before unmounting a share whose last session just left, wait up to this long for that
 # session's agent process to exit (its cwd may be inside the mount), and retry a busy umount a
 # few times. A single failure used to leave the share mounted with no registry entry, so the
 # next connect mounted onto a busy path (EBUSY) and was refused 412 forever.
@@ -108,7 +108,7 @@ def build_logger(cfg: ServerConfig) -> logging.Logger:
     logger.handlers.clear()
     logger.propagate = False
     if not cfg.logging.enabled:
-        # T2 §4: ``level = "off"`` (the default) silences everything and must not open the
+        # ``level = "off"`` (the default) silences everything and must not open the
         # ``file`` either. A NullHandler keeps the logger usable without emitting anything.
         logger.setLevel(logging.CRITICAL + 1)
         logger.addHandler(logging.NullHandler())
@@ -118,9 +118,9 @@ def build_logger(cfg: ServerConfig) -> logging.Logger:
     handler = logging.FileHandler(cfg.logging.file, encoding="utf-8") if cfg.logging.file else logging.StreamHandler(sys.stderr)
     handler.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
     logger.addHandler(handler)
-    # Never let the library's wire trace run, even at [logging] level = debug (T55-S2): its
+    # Never let the library's wire trace run, even at [logging] level = debug: its
     # DEBUG trace logs request headers, and the handshake ``Config`` header carries the
-    # client's share password (T1 §2). The bridge's own log level is the operator's business;
+    # client's share password. The bridge's own log level is the operator's business;
     # the plaintext of a client's credential on disk is not. websockets.client /
     # websockets.server are the two logger names this version traces on (websockets>=13 asyncio).
     for name in ("websockets", "websockets.client", "websockets.server"):
@@ -154,15 +154,15 @@ def describe_socket(sock: socket.socket) -> str:
     return f"{shown} ({'ipv6' if sock.family == socket.AF_INET6 else 'ipv4'})"
 
 
-# -- T82: platform seams ----------------------------------------------------------------
+# -- Platform seams ----------------------------------------------------------------
 #
 # Windows stage 1 keeps one code base: every difference is a platform branch behind a small
 # seam, and the POSIX branches keep executing exactly what they did before. Deleting the
-# T82-marked functions and the branches that call them restores the pure-Linux behaviour.
+# marked functions and the branches that call them restores the pure-Linux behaviour.
 
 
 def _on_windows() -> bool:
-    """True when the bridge runs on Windows (T82). One seam, so tests can pick a side."""
+    """True when the bridge runs on Windows. One seam, so tests can pick a side."""
     return os.name == "nt"
 
 
@@ -172,11 +172,11 @@ _SO_EXCLUSIVEADDRUSE = getattr(socket, "SO_EXCLUSIVEADDRUSE", 0xFFFFFFFB)
 
 
 def _socket_options(*, windows: bool | None = None) -> list[tuple[int, int, int]]:
-    """The ``setsockopt`` list a new listening socket gets (T82).
+    """The ``setsockopt`` list a new listening socket gets.
 
     POSIX keeps ``SO_REUSEADDR`` — unchanged. Windows uses ``SO_EXCLUSIVEADDRUSE`` instead:
     there ``SO_REUSEADDR`` lets a second process **steal** the bound port, the opposite of
-    "this service owns this port" (T81 §2.2-6).
+    "this service owns this port".
     """
     if _on_windows() if windows is None else windows:
         return [(socket.SOL_SOCKET, _SO_EXCLUSIVEADDRUSE, 1)]
@@ -184,7 +184,7 @@ def _socket_options(*, windows: bool | None = None) -> list[tuple[int, int, int]
 
 
 def _mount_ok(mount_point: str) -> bool:
-    """Is the session's share really in place at ``mount_point``? (T82)
+    """Is the session's share really in place at ``mount_point``?
 
     POSIX asks the kernel (``os.path.ismount`` — unchanged). Windows asks the structure: a
     reparse point at a UNC path, because ``ismount``'s Windows behaviour is not something
@@ -294,23 +294,23 @@ SESSION_OPEN_METHODS = frozenset({"session/new", "session/load", "session/resume
 
 
 # The handshake HTTP status the server answers a client whose workspace could not be
-# mounted or gated with (T1 §3): a distinct 4xx the client maps to exit code 7 and does not
+# mounted or gated with: a distinct 4xx the client maps to exit code 7 and does not
 # retry (a reconnect would ask it to mount the same wrong share again).
 WORKSPACE_REFUSED_STATUS = 412
 
 # The JSON-RPC error code the bridge answers a host request with while a session's share is
-# marked down (T6). It is the bridge's own code, deliberately NOT the provider rate-limit
+# marked down. It is the bridge's own code, deliberately NOT the provider rate-limit
 # code; AionUi renders any error response to a host request in its error box, so this reaches
 # the same render path without impersonating a provider error.
 WORKSPACE_UNAVAILABLE_CODE = -32000
 
-# T8: a session cwd that cannot be used is answered with CWD_ERROR_CODE and a message of the
+# A session cwd that cannot be used is answered with CWD_ERROR_CODE and a message of the
 # form "<CWD_ERROR_PREFIX>: <reason>"; the client turns that into the final host-facing text
 # (see frames.py).
 
 
 class CwdRefused(Exception):
-    """The directory a ``session/new`` asks to work in could not be made (T35-R15).
+    """The directory a ``session/new`` asks to work in could not be made.
 
     Raised after the handshake, when there is no HTTP response left to refuse with, so
     the handler ends the session instead of letting the error escape: an uncaught error
@@ -323,14 +323,14 @@ class _Abandon:
     """A one-way flag the caller raises when it gives up on an off-loop mount.
 
     ``wait_for`` can cancel a queued executor job but never a running one, so a mount that
-    is already under way keeps going after the handshake refused (T55-M6) and would register
+    is already under way keeps going after the handshake refused and would register
     a ``refs=0`` entry nobody owns — a real mount with no monitor and no session, left until
     the process exits. The worker checks this before it registers, and the caller gets a
     done-callback backstop for the narrow window where the mount finished first.
 
     ``handed_off`` records that the worker itself noticed the abandonment and already gave
     the mount to the loop; the backstop then stays quiet so a mount is never reclaimed twice
-    over (T59-N2: the reclaim must be a single, lock-held decision).
+    over (N2: the reclaim must be a single, lock-held decision).
     """
 
     __slots__ = ("abandoned", "handed_off")
@@ -345,7 +345,7 @@ class _HostLock:
     """One hostname's mount lock plus how many callers hold a claim on it.
 
     ``users`` counts everyone inside or waiting on the lock, which is what makes the lock
-    recyclable: a plain dict of locks grows by one entry per client hostname forever (T55-S4),
+    recyclable: a plain dict of locks grows by one entry per client hostname forever,
     and it is only safe to drop a lock when nobody is queued on it *and* it has no mount.
     """
 
@@ -376,7 +376,7 @@ class _MountEntry:
 
 
 def _parse_cwd_frame(frame: str) -> tuple[dict, dict] | None:
-    """One parse shared by the cwd rewriter and the cwd probe (T37-S2).
+    """One parse shared by the cwd rewriter and the cwd probe.
 
     Returns ``(message, params)`` for a session-opening method whose params really is a
     table, otherwise ``None`` — every caller then treats the frame as pass-through.
@@ -403,18 +403,18 @@ def session_cwd(frame: str) -> str:
     """The ``cwd`` a session-opening frame asks the agent to work in, or "" for none.
 
     Read-only on purpose: the value is only used to decide which directory to create
-    (T34); the frame itself goes out untouched.
+; the frame itself goes out untouched.
     """
     parsed = _parse_cwd_frame(frame)
     return _cwd_of(parsed[1]) if parsed else ""
 
 
-# T73: how many mcpServers names one log line lists before it is cut short.
+# How many mcpServers names one log line lists before it is cut short.
 MCP_NAME_LIMIT = 20
 
 
 def _mcp_name(entry) -> str:
-    """The name one ``mcpServers`` entry shows in the log, and nothing else (T73).
+    """The name one ``mcpServers`` entry shows in the log, and nothing else.
 
     Only ``name`` is ever read: an entry's ``env``/``args``/``url``/``command`` can carry
     tokens (T65 found ``TEAM_MCP_TOKEN`` in an AionUi-injected server) and never reach a log.
@@ -430,7 +430,7 @@ def _mcp_name(entry) -> str:
 
 
 def _mcp_names_line(servers: list) -> tuple[int, str]:
-    """``(count, rendered names)`` for one session-opening frame's ``mcpServers`` (T73)."""
+    """``(count, rendered names)`` for one session-opening frame's ``mcpServers``."""
     names = [_mcp_name(entry) for entry in servers]
     shown = ", ".join(names[:MCP_NAME_LIMIT])
     if len(names) > MCP_NAME_LIMIT:
@@ -438,14 +438,14 @@ def _mcp_names_line(servers: list) -> tuple[int, str]:
     return len(names), shown
 
 
-# T62: a branch-B session's directory name is the **host's own** cwd's last segment, sanitised
+# A branch-B session's directory name is the **host's own** cwd's last segment, sanitised
 # to one safe path segment, so the same host folder always resolves to the same directory across
 # bridge sessions. The bridge used to key it by its own session UUID, which changed on every new
 # connection — and the agent keys a session to the cwd it was created in, so a resumed session
-# was rejected with "does not belong to cwd" (T61).
+# was rejected with "does not belong to cwd".
 _BRANCH_B_KEEP = frozenset("._-")
 
-# T62: the two reasons a branch-B session is refused rather than guessed a directory for. The
+# The two reasons a branch-B session is refused rather than guessed a directory for. The
 # message is ASCII and self-contained: branch B has no mounted share, so the client's T8 rewrite
 # (which is gated on having one) passes it to the host verbatim.
 BRANCH_B_NO_CWD = "session cwd refused: the host sent no folder for this session"
@@ -453,7 +453,7 @@ BRANCH_B_NO_NAME = "session cwd refused: the host folder name has no usable char
 
 
 def branch_b_dirname(host_cwd: str) -> str:
-    """The branch-B directory name for a host cwd, or refuse the session (T62).
+    """The branch-B directory name for a host cwd, or refuse the session.
 
     The name is the cwd's **last** segment (``/`` and ``\\`` both separate, so a Windows path
     works), with every character outside ASCII alphanumerics and ``._-`` replaced by ``-``. The
@@ -461,12 +461,12 @@ def branch_b_dirname(host_cwd: str) -> str:
     ``<root>/localhost``.
 
     A cwd the host did not really send (missing, not a string, blank), a segment with nothing
-    usable left, or ``.``/``..`` raises :class:`CwdRefused`. Guessing a directory here would
+    usable left, or ``.``/``..`` raises:class:`CwdRefused`. Guessing a directory here would
     hand the agent a working directory the host never named — the old per-connection UUID
-    directory is exactly what made the agent reject a resumed session (T61).
+    directory is exactly what made the agent reject a resumed session.
 
     ASCII-only on purpose: the name reaches the log line and the refusal text, and those stay
-    plain English on the wire (the rule ``sanitize_hostname`` already follows, T63-N5). A
+    plain English on the wire (the rule ``sanitize_hostname`` already follows, N5). A
     non-ASCII folder therefore collapses to ``-`` rather than through.
     """
     raw = host_cwd.strip()
@@ -484,7 +484,7 @@ def branch_b_dirname(host_cwd: str) -> str:
 
 
 def _ip_version(connection) -> str | None:
-    """The IP family this connection's own transport uses: ``"4"``/``"6"``, else ``None`` (T64).
+    """The IP family this connection's own transport uses: ``"4"``/``"6"``, else ``None``.
 
     The criterion is the **transport's socket family** (``AF_INET``/``AF_INET6``), never the
     address text: an IPv4-mapped address on an ``AF_INET6`` socket is a v6 connection, and a
@@ -520,26 +520,26 @@ class Bridge:
         # Sessions whose admission is mid-flight (slot taken, agent not yet started).
         # They count against max_sessions but are not eviction candidates (R7/R8).
         self._admitting: set[str] = set()
-        # Per-client workspace mounts (T53 §3). One entry per client hostname, keyed and
+        # Per-client workspace mounts. One entry per client hostname, keyed and
         # reference-counted across the sessions bound to it: the first connection of a
         # hostname mounts under root/<hostname> and starts that mount's gate/monitor; the
         # last session bound to it unmounts. The mount/umount and the sentinel read all
         # touch the filesystem or the helper socket, so they run **off the event loop** in
-        # one bounded pool (T50-S2) — a hung share queues here and fails closed on the
+        # one bounded pool — a hung share queues here and fails closed on the
         # monitor_timeout, never freezing a handshake or starving another client.
         self._mounts: dict[str, _MountEntry] = {}
         # Serialises mount+gate+unmount per hostname: two concurrent first-connections for
         # the same client must not both see "no entry" and mount twice, and a departing
-        # client's umount must not run underneath a newcomer that is mid-mount (T55-M5).
+        # client's umount must not run underneath a newcomer that is mid-mount.
         self._host_locks: dict[str, _HostLock] = {}
         # In-flight last-session unmounts, kept referenced so the loop does not GC them out
         # from under asyncio, and drained on shutdown (run() → shutdown_workspaces).
         self._release_tasks: set[asyncio.Task] = set()
         # The running loop, captured the first time a connection reaches the handler: the
         # mount worker needs it to hand an abandoned mount back for a **lock-held** reclaim
-        # instead of unmounting from its own thread (T59-N2).
+        # instead of unmounting from its own thread.
         self._loop: asyncio.AbstractEventLoop | None = None
-        # The workspace feature is always on (T1 §5): the pool that runs a mount/gate (a hung
+        # The workspace feature is always on: the pool that runs a mount/gate (a hung
         # share or a slow helper must never touch the event loop) always exists.
         self._ws_pool: ThreadPoolExecutor | None = ThreadPoolExecutor(
             max_workers=WORKSPACE_GATE_WORKERS, thread_name_prefix="rab-ws"
@@ -606,7 +606,7 @@ class Bridge:
                 self._retire(victim)
             self._admitting.add(session.session_id)
 
-        # The mount is proven **before** the 101 (T1 §3): a client whose share cannot be
+        # The mount is proven **before** the 101: a client whose share cannot be
         # mounted or gated is answered with a distinct status and gets no session. The agent
         # is not spawned here — the handler does that once the upgrade is written, by which
         # time the mount is in place, so ``[[agents]].cwd`` may live under ``root/<hostname>``.
@@ -617,7 +617,7 @@ class Bridge:
                 return self._reject(WORKSPACE_REFUSED_STATUS, reason, path=path, connection=connection)
 
         # The mount (if any) is in place, so the agent can be spawned now — ``[[agents]].cwd``
-        # may live under ``root/<hostname>`` (T1 §3). A spawn failure is still a handshake 500:
+        # may live under ``root/<hostname>``. A spawn failure is still a handshake 500:
         # the 101 has not been written yet. ``_ensure_agent`` is a no-op on a resume whose agent
         # is already up.
         try:
@@ -669,7 +669,7 @@ class Bridge:
         The body used to end in "no disconnected session to evict", which has been
         wrong since R7: a registry holding only in-flight handshakes has no connected
         session either, and telling an operator to go disconnect one sends them chasing
-        nothing. So name the actual composition of the registry (T19-S4).
+        nothing. So name the actual composition of the registry.
         """
         retained = len(self.sessions)
         connected = sum(1 for session in self.sessions.values() if session.connection is not None)
@@ -702,7 +702,7 @@ class Bridge:
         self.sessions.pop(session.session_id, None)
         self._admitting.discard(session.session_id)
         if getattr(session, "_rab_hostname", None):
-            # Last session on a hostname unmounts it (T53 §3). Scheduled as a task: the
+            # Last session on a hostname unmounts it. Scheduled as a task: the
             # umount is a helper round-trip and must not block the teardown that is
             # already on the loop. run() drains any that are still pending on shutdown.
             self._release_tasks.add(asyncio.create_task(self._release_mount(session)))
@@ -714,7 +714,7 @@ class Bridge:
         conversation is not cut off (the rule the user set on 2026-10-10). Ordering
         falls back to ``created_at`` so a session that never got attached (its client
         died between the 101 and the handler) cannot sit in the registry forever with
-        ``grace = 0`` (T17-S1); with one uniform grace window the earliest key is also
+        ``grace = 0``; with one uniform grace window the earliest key is also
         the first to expire.
 
         Sessions whose admission is still in flight are skipped: they have taken a slot
@@ -744,7 +744,7 @@ class Bridge:
         once the newcomer is actually admitted. Announcing at the pop left an
         ``evicted session …`` line with no matching ``closed (evicted)`` behind it every
         time ``start()`` failed, telling an operator the session was reaped while it was
-        still live and resumable (T19-S2).
+        still live and resumable.
         """
         self.sessions.pop(session.session_id, None)
         self._admitting.discard(session.session_id)
@@ -754,7 +754,7 @@ class Bridge:
         age = time.time() - (session.disconnected_at or session.created_at)
         # A session that never had a connection is aged from its creation, and the line
         # has to say so: "disconnected 0.4s ago" about a handshake that never attached
-        # describes an event that did not happen (T19-S5).
+        # describes an event that did not happen.
         state = (
             f"disconnected {age:.1f}s ago"
             if session.disconnected_at is not None
@@ -773,11 +773,11 @@ class Bridge:
         """Undo an admission that never completed: give up the slot and the victim.
 
         Called when a workspace mount/gate refuses the handshake or the agent cannot start
-        (T1 §3). It is deliberately synchronous — a cancellation mid-spawn must still be able
+. It is deliberately synchronous — a cancellation mid-spawn must still be able
         to give the slot back — so a mount the session had already bound is released by a
         scheduled task, exactly as ``_session_closed`` does. The victim is put back unless
         something already started closing it, so a failed admission never costs a healthy grace
-        session; the eviction is never announced (T19-S2).
+        session; the eviction is never announced.
         """
         self.sessions.pop(session.session_id, None)
         self._admitting.discard(session.session_id)
@@ -820,7 +820,7 @@ class Bridge:
                     break
                 offline = self._offline_mount_point(session)
                 if offline is not None:
-                    # T6: the session's share is marked down. Do not forward to the agent;
+                    # The session's share is marked down. Do not forward to the agent;
                     # answer a host request with a JSON-RPC error (the shape AionUi renders as
                     # its error box). The connection stays, and once the monitor sees the share
                     # again forwarding resumes.
@@ -831,7 +831,7 @@ class Bridge:
                 try:
                     prepared = self._for_agent(message, session)
                 except CwdRefused as exc:
-                    # T8: answer the request with a JSON-RPC error instead of opening the
+                    # Answer the request with a JSON-RPC error instead of opening the
                     # session and then closing it with 1000 — that made the client exit and
                     # AionUi show only "Incoming transport closed". The session stays; a later
                     # valid request can still go through. The full reason goes to the log too.
@@ -857,19 +857,19 @@ class Bridge:
           the same absolute directory the client meant.
         * no share on this session (branch B) — the host cwd's **last segment** names
           ``<root>/localhost/<that segment>/``, so one host folder is one directory across
-          reconnects (T62); a folder the host did not name refuses the session.
+          reconnects; a folder the host did not name refuses the session.
 
         Branch A's path is the client's **own** entry inside the mounted share: the server only
         **checks it exists and is readable** and refuses the session otherwise — it never
-        ``mkdir``-s into the operator's share (T2). Branch B's path is server-local, so
-        ``mkdir -p`` is applied there. A cwd that cannot be used raises :class:`CwdRefused`;
-        the handler answers that request with a JSON-RPC error and keeps the session (T8).
+        ``mkdir``-s into the operator's share. Branch B's path is server-local, so
+        ``mkdir -p`` is applied there. A cwd that cannot be used raises:class:`CwdRefused`;
+        the handler answers that request with a JSON-RPC error and keeps the session.
         """
         parsed = _parse_cwd_frame(frame)
         if parsed is None:
             return frame
         message, params = parsed
-        # T73: one line per session-opening frame, saying which MCP servers the host is
+        # One line per session-opening frame, saying which MCP servers the host is
         # handing the agent — names only, and always, so "none" is visible as ``0 ()``.
         servers = params.get("mcpServers")
         count, names = _mcp_names_line(servers if isinstance(servers, list) else [])
@@ -881,9 +881,9 @@ class Bridge:
         if has_share:
             wanted = self._share_cwd(session, host_cwd)
         else:
-            # T62: with no workspace descriptor the session works under a literal
+            # With no workspace descriptor the session works under a literal
             # ``localhost`` segment named after the host's own folder, so the same folder is
-            # the same directory across bridge sessions (T61). No folder, no session.
+            # the same directory across bridge sessions. No folder, no session.
             wanted = os.path.join(self.cfg.workspace.root, "localhost",
                                   branch_b_dirname(host_cwd))
         if wanted and params.get("cwd") != wanted:
@@ -920,7 +920,7 @@ class Bridge:
             ) from exc
 
     def _check_share_cwd(self, session: Session, wanted: str) -> None:
-        """Branch A: the client's share entry must exist and be readable (T8).
+        """Branch A: the client's share entry must exist and be readable.
 
         Three separate verdicts, so the operator learns which one failed — the old single
         ``os.path.isdir`` folded every ``OSError`` into "does not exist", which is exactly what
@@ -930,20 +930,20 @@ class Bridge:
         2. the entry exists (``ENOENT``);
         3. it is readable (``EACCES``/``EPERM``) and is a directory.
 
-        A failure raises :class:`CwdRefused` with ``"<prefix>: <reason>"``; the handler answers
+        A failure raises:class:`CwdRefused` with ``"<prefix>: <reason>"``; the handler answers
         that request with a JSON-RPC error, and the **client** turns the reason into the final
         host-facing text (its own local path and the share account, T8 §3C).
         """
         entry = getattr(session, "_rab_entry", None)
         mount_point = entry.mount_point if entry is not None else ""
-        if mount_point and not _mount_ok(mount_point):     # T82: POSIX still ismount
+        if mount_point and not _mount_ok(mount_point):     # POSIX still ismount
             raise CwdRefused(f"{CWD_ERROR_PREFIX}: {CWD_REASON_NOT_MOUNTED}")
         try:
             info = os.stat(wanted)
         except FileNotFoundError as exc:
             raise CwdRefused(f"{CWD_ERROR_PREFIX}: {CWD_REASON_NOT_FOUND}") from exc
         except OSError as exc:
-            # The errno table keeps this ASCII on any locale (T55-M4); it is for the log, the
+            # The errno table keeps this ASCII on any locale; it is for the log, the
             # client rewrites the host-facing message.
             self.log.warning("session cwd %s not readable: %s", wanted, english_reason(exc))
             raise CwdRefused(f"{CWD_ERROR_PREFIX}: {CWD_REASON_NOT_READABLE}") from exc
@@ -951,7 +951,7 @@ class Bridge:
             raise CwdRefused(f"{CWD_ERROR_PREFIX}: {CWD_REASON_NOT_DIRECTORY}")
 
     def _offline_mount_point(self, session: Session) -> str | None:
-        """This session's mount point when its share is marked down, else ``None`` (T6).
+        """This session's mount point when its share is marked down, else ``None``.
 
         A session with no share, or one whose share is available, forwards normally.
         """
@@ -964,7 +964,7 @@ class Bridge:
         return entry.mount_point
 
     def _jsonrpc_error_reply(self, frame: str, message_text: str, code: int) -> str | None:
-        """A JSON-RPC error response to the host request ``frame``, or ``None`` (T6/T8).
+        """A JSON-RPC error response to the host request ``frame``, or ``None``.
 
         Standard JSON-RPC shape (``{"jsonrpc","id","error":{"code","message"}}``) — what
         AionCore maps and AionUi renders as its error box. The code is the bridge's own and the
@@ -1019,14 +1019,14 @@ class Bridge:
         then gate the fresh-or-existing mount point. Returns ``(refusal_reason_or_empty, entry)``.
 
         Runs in the workspace pool (a hung share or a slow helper must never touch the event
-        loop; the caller bounds it with a fail-closed ``wait_for``, T49-R19). A gate failure
+        loop; the caller bounds it with a fail-closed ``wait_for``, R19). A gate failure
         on a mount this very call created is rolled back with an umount so a wrong-but-mounted
         share does not linger; a failure on a pre-existing shared mount leaves the other
         sessions that already hold it untouched.
 
         ``abandon`` is checked at every point where this function could still decide to hand
         an entry back: the caller may already have refused the client and gone, and a mount
-        registered then would be owned by nobody (T55-M6).
+        registered then would be owned by nobody.
         """
         cfg = self.cfg.workspace
         try:
@@ -1042,12 +1042,12 @@ class Bridge:
 
         entry = self._mounts.get(hostname)
         created = False
-        # T6: an entry the monitor marked unreachable no longer refuses a newcomer. The share
+        # An entry the monitor marked unreachable no longer refuses a newcomer. The share
         # may still be mounted (the gate below re-checks it), and a session admitted on it is
         # answered with a JSON-RPC error per request until the monitor sees it again.
         if entry is None:
             if os.path.ismount(mount_point):
-                # T14: a mount left behind by an earlier failed unmount. Try to clear it; if it
+                # A mount left behind by an earlier failed unmount. Try to clear it; if it
                 # will not clear, **adopt** it rather than mounting onto a busy path (which would
                 # raise EBUSY on every connect, i.e. a permanent 412). The sentinel gate below
                 # still proves it is the right share.
@@ -1068,7 +1068,7 @@ class Bridge:
                         "mount_point": mount_point,
                         "options": clean_options,
                         "credentials": credentials,
-                        # The share owner is the server's choice (T8), never the client's options.
+                        # The share owner is the server's choice, never the client's options.
                         "uid": cfg.mount_uid,
                         "gid": cfg.mount_gid,
                     }, timeout=cfg.monitor_timeout_seconds, sock_path=cfg.helper_socket)
@@ -1079,7 +1079,7 @@ class Bridge:
                 # that caller released _host_lock(hostname) when it timed out, so a newer
                 # client may already have mounted this very path and been admitted on it, and
                 # umounting from the pool thread would take the share out from under a live
-                # session (T59-N2). Hand it to the loop, which reclaims under the lock.
+                # session. Hand it to the loop, which reclaims under the lock.
                 self._hand_off_abandoned(hostname, mount_point, abandon)
                 return "abandoned", None
             entry = _MountEntry(
@@ -1130,7 +1130,7 @@ class Bridge:
         self._release_tasks.add(task)
 
     async def _reclaim_abandoned_mount(self, hostname: str, mount_point: str, created: bool) -> None:
-        """Give back a mount whose client abandoned, **under that hostname's lock** (T59-N2).
+        """Give back a mount whose client abandoned, **under that hostname's lock**.
 
         By the time this runs, the lock has been contended with: a newer client may have
         mounted the same path and been admitted. The safe direction is to leave a stacked
@@ -1160,22 +1160,22 @@ class Bridge:
             self.log.info("workspace unmounted %s (%s)", mount_point, reason)
 
     async def _admit_workspace(self, descriptor: dict, session: Session) -> str | None:
-        """Mount + gate this connection's share before the 101 (T1 §3); return reason or None.
+        """Mount + gate this connection's share before the 101; return reason or None.
 
         Runs off the event loop in the bounded workspace pool (a hung share or a slow helper
         must never touch the loop) and fails closed on the gate timeout. On success the session
-        gets a **per-session** reference to the mount entry (T59-N1) and that mount's monitor is
+        gets a **per-session** reference to the mount entry and that mount's monitor is
         started. On failure nothing is bound and the reason is English and ASCII.
         """
         if _on_windows():
-            # T82: Windows has no mount(8) and no helper — the share is linked in instead.
+            # Windows has no mount(8) and no helper — the share is linked in instead.
             return await self._admit_workspace_unc(descriptor, session)
         cfg = self.cfg.workspace
         try:
             hostname = sanitize_hostname(str(descriptor.get("hostname", "")))
         except MountInputError as exc:
             return f"workspace descriptor rejected: {exc}"
-        # Enforce the token on **this** side too (T58-A2). Requiring it in the client config is
+        # Enforce the token on **this** side too. Requiring it in the client config is
         # only half the promise: an old or hand-rolled client can still send an empty one, and
         # the gate then degrades to "is anything mounted at this path" — silently dropping the
         # wrong-share/empty-share check that is the sentinel's entire purpose. A share that
@@ -1185,8 +1185,8 @@ class Bridge:
                     "mounted share is yours")
         previous = getattr(session, "_rab_hostname", None)
         if previous is not None and previous != hostname:
-            # A session's workspace is **fixed at session start and can never move** (T60-N3).
-            # Releasing the old share here — which T59-N1 needs to keep the count honest —
+            # A session's workspace is **fixed at session start and can never move**.
+            # Releasing the old share here — which N1 needs to keep the count honest —
             # would umount ``root/<previous>`` right under an agent that is still running,
             # because ``[[agents]].cwd`` may live *inside* that share and a resume does not
             # restart the agent. Refusing is the only safe answer: start a new session instead.
@@ -1212,7 +1212,7 @@ class Bridge:
                 return "workspace storage unavailable (gate timed out)"
             if reason:
                 return reason
-            # Mounted and gated. References are counted **per session, per entry** (T59-N1): a
+            # Mounted and gated. References are counted **per session, per entry**: a
             # reconnect re-runs this for the same session, so an unconditional increment would
             # let refs outrun sessions — refs stuck at 1/2/3… while one session holds one
             # release, meaning the share for any client that ever dropped a connection can
@@ -1232,7 +1232,7 @@ class Bridge:
         return None
 
     async def _admit_workspace_unc(self, descriptor: dict, session: Session) -> str | None:
-        """Windows: link the client's share into ``<root>/<hostname>``, then gate it (T82).
+        """Windows: link the client's share into ``<root>/<hostname>``, then gate it.
 
         Windows has no ``mount(8)``, no bind mount and no privileged helper, so the share is
         reached at its own UNC path and made visible to the session as a **directory symlink**
@@ -1269,7 +1269,7 @@ class Bridge:
         try:
             resolve_unc_share(unc, link)
         except MountError as exc:
-            # T86: a MountError already carries an English sentence — ``english_reason`` maps a
+            # A MountError already carries an English sentence — ``english_reason`` maps a
             # non-OSError to its class name, which is what used to reach the wire ("workspace
             # link failed: MountError"). Log the original for the operator and put an
             # ASCII-safe copy of its own sentence on the wire, exactly as POSIX does.
@@ -1294,7 +1294,7 @@ class Bridge:
         Quiet when the worker noticed the abandonment itself (``handed_off``) — that path
         already scheduled the reclaim, and two claims on one mount is exactly what this must
         not do. Otherwise hand the entry to the **same lock-held reclaim** the worker uses:
-        deciding and unmounting from this callback directly would repeat T59-N2 in a different
+        deciding and unmounting from this callback directly would repeat N2 in a different
         shape, because a newer client may have taken the path in the meantime.
         """
         if not abandon.abandoned or abandon.handed_off:
@@ -1308,7 +1308,7 @@ class Bridge:
         self._schedule_reclaim(hostname, entry.mount_point, True)
 
     def _umount_sync(self, mount_point: str) -> bool:
-        """Unmount with a few retries (T14); runs off the loop. True when it is gone.
+        """Unmount with a few retries; runs off the loop. True when it is gone.
 
         ``umount`` fails with "target is busy" while a process still has its cwd inside the
         mount — the session's agent was just reaped, but its children can lag a moment — so a
@@ -1331,7 +1331,7 @@ class Bridge:
         return False
 
     async def _discard_mount(self, hostname: str, entry: _MountEntry) -> bool:
-        """Unmount a mount and, only if it really went away, stop its monitor (T14).
+        """Unmount a mount and, only if it really went away, stop its monitor.
 
         Returns ``True`` when the mount is gone. On failure the monitor is left running and the
         **caller keeps the entry**, so the next admission reuses the still-mounted share instead
@@ -1339,7 +1339,7 @@ class Bridge:
 
         Callers hold ``_host_lock(hostname)`` — the last session for a hostname leaving and
         the lock-held reclaim of an abandoned mount both decide inside the lock, so no umount
-        can land on top of a newcomer that was just admitted (T59-N2). ``shutdown_workspaces``
+        can land on top of a newcomer that was just admitted. ``shutdown_workspaces``
         takes the lock too rather than relying on "no traffic left" being true at that instant.
         """
         loop = asyncio.get_running_loop()
@@ -1353,7 +1353,7 @@ class Bridge:
         return True
 
     async def _ensure_agent(self, session: Session, ipversion: str | None = None) -> str | None:
-        """Spawn the session's agent, once, during admission (T1 §3).
+        """Spawn the session's agent, once, during admission.
 
         Returns ``None`` when the agent is up (or was already up on a resume), or an English
         reason when it could not be started.
@@ -1362,14 +1362,14 @@ class Bridge:
         has an agent is a no-op. The caller releases the admission slot once this is decided.
 
         ``ipversion`` is the connection's IP family (``"4"``/``"6"``, or ``None`` when it cannot
-        be told). It joins the client hostname in the agent's environment (T64); both are
+        be told). It joins the client hostname in the agent's environment; both are
         injected **only here**, at the one moment the agent starts, so a reconnect that reuses a
         running agent keeps the values its first connection fixed.
         """
         if session.proc is not None:
             return None
         if session.closing:
-            # Distinct from "already running" (T58-A3): returning None here would let the
+            # Distinct from "already running": returning None here would let the
             # handler go on to ``send_to_agent``, and that **silently drops** a frame whenever
             # there is no process (session.py). A session on its way out gets an explicit
             # refusal instead of a frame that vanishes without a trace.
@@ -1379,20 +1379,20 @@ class Bridge:
         if hostname:
             # Branch A only: the hostname exactly as the descriptor carried it (sanitize_hostname
             # validates but returns it unchanged). Branch B has none, and an empty value would be
-            # worse than no variable at all (T64 §2).
+            # worse than no variable at all.
             extra_env[CLIENT_ENV] = hostname
         if ipversion:
             extra_env[IPVERSION_ENV] = ipversion
-        # T79: the session's own bridge id, unconditional — the same value the handshake
+        # The session's own bridge id, unconditional — the same value the handshake
         # response header and every ``[session …]`` log line carry.
         extra_env[SESSION_ID_ENV] = session.session_id
         try:
             await session.start(extra_env)
         except OSError as exc:
             # There is no HTTP response left to send after the 101, so the reason goes back to
-            # the caller, which puts it on the close frame (T1 §3). Only OSError is answered
+            # the caller, which puts it on the close frame. Only OSError is answered
             # with a reason: an unexpected error keeps propagating instead of being dressed up
-            # as something the client could act on (T19-S1).
+            # as something the client could act on.
             return f"cannot start agent {session.agent.name}: {english_reason(exc)}"
         return None
 
@@ -1416,7 +1416,7 @@ class Bridge:
         entry.monitor_task = asyncio.create_task(entry.monitor.run(entry.stop))
 
     def _on_mount_change(self, hostname: str, available: bool) -> None:
-        """Monitor verdict for one mount (T6).
+        """Monitor verdict for one mount.
 
         Going down only flips the entry's flag: live sessions are **not** closed. Their host
         requests are answered with a JSON-RPC error (see the handler) and the connection stays,
@@ -1431,7 +1431,7 @@ class Bridge:
         """Serialize everything that changes one hostname's mount, and recycle the lock.
 
         A claim is registered before waiting so the lock cannot be dropped out from under a
-        waiter (T55-S4: the old dict of locks only ever grew).
+        waiter (S4: the old dict of locks only ever grew).
         """
         entry = self._host_locks.get(hostname)
         if entry is None:
@@ -1448,13 +1448,13 @@ class Bridge:
     async def _release_mount(self, session: Session) -> None:
         """Drop a session's reference; unmount the last one on that hostname.
 
-        Runs under the same per-hostname lock the mount takes (T55-M5): without it, a
+        Runs under the same per-hostname lock the mount takes: without it, a
         departing client's umount can land *after* a newcomer finished mounting and was
         admitted — yanking the working share out from under a live session, or failing the
         umount as busy and leaving the registry and the kernel disagreeing.
 
         What is released is the reference this session was actually given (``_rab_entry``,
-        T59-N1). If the registry now holds a **different** entry under that hostname, ours was
+        N1). If the registry now holds a **different** entry under that hostname, ours was
         already reclaimed together with its mount, and decrementing the newcomer's count would
         steal a reference from a session that never took one.
         """
@@ -1462,7 +1462,7 @@ class Bridge:
         if not hostname:
             return
         held = getattr(session, "_rab_entry", None)
-        # T14: the agent's cwd may live inside the mount; let it exit (bounded) before the
+        # The agent's cwd may live inside the mount; let it exit (bounded) before the
         # umount, or ``umount`` reports "target is busy" and the share is left mounted.
         await session.wait_exit(UMOUNT_WAIT_SECONDS)
         session._rab_hostname = None       # idempotent — a session releases at most once
@@ -1475,7 +1475,7 @@ class Bridge:
             if entry.refs > 0:
                 return                   # still in use by another session: leave it mounted
             if not await self._discard_mount(hostname, entry):
-                # T14: keep it registered (its monitor still running) so the next admission
+                # Keep it registered (its monitor still running) so the next admission
                 # reuses the still-mounted share instead of mounting onto a busy path.
                 self.log.warning("workspace %s left mounted for reuse after a failed unmount",
                                  entry.mount_point)
@@ -1493,7 +1493,7 @@ class Bridge:
         # Let the in-flight releases and abandoned-mount reclaims **finish** rather than
         # cancelling them: a cancelled task can die between "popped the entry" and "umounted",
         # and the sweep below would then unmount a path the half-finished task already took
-        # down. Each mount must be given back exactly once (T59-N2's whole point). Bounded by
+        # down. Each mount must be given back exactly once (N2's whole point). Bounded by
         # the helper timeout on each round-trip; run() is already past the listeners.
         if self._release_tasks:
             await asyncio.gather(*list(self._release_tasks), return_exceptions=True)
@@ -1517,7 +1517,7 @@ def _is_session_end(exc: ConnectionClosed) -> bool:
 
 async def run(cfg: ServerConfig, log: logging.Logger) -> None:
     bridge = Bridge(cfg, log)
-    # §3 (T53/T1): the workspace is mounted per client at handshake time, not at startup, so
+    # §3: the workspace is mounted per client at handshake time, not at startup, so
     # the service comes up whether or not any share is reachable — "if it cannot mount, do not
     # start" is retired along with the single global mount. A client whose share is not ready
     # is refused in its handshake, before the 101, not here.

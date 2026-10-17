@@ -1,4 +1,4 @@
-"""Per-client workspace mount, gate and liveness monitor (T53 §3).
+"""Per-client workspace mount, gate and liveness monitor.
 
 The bridge runs as the unprivileged ``agent`` account and therefore **cannot mount** a
 share. §3 moves mounting to *handshake time*, per client: when a client's handshake carries a
@@ -8,20 +8,20 @@ fresh mount point. The bridge never touches a mount syscall — it only opens a 
 
 Layers, all English and locale-independent (a refusal never echoes ``strerror``):
 
-* :func:`helper_mount` / :func:`helper_umount` — the client side of the
+*:func:`helper_mount` /:func:`helper_umount` — the client side of the
   ``remote-acp-helper`` Unix socket. A password travels only inside this request; it is
   never logged, never put in argv.
-* :func:`sentinel_gate` — before any session is admitted, the mount is really there
+*:func:`sentinel_gate` — before any session is admitted, the mount is really there
   (``ismount``) **and** really the expected share (a sentinel file whose content equals
   the client's own token). A wrong-but-mounted or empty share fails the second check.
-* :class:`MountMonitor` — a background loop probing the storage server's TCP port and the
+*:class:`MountMonitor` — a background loop probing the storage server's TCP port and the
   local mount, **never touching files under the mount** (a hung share must not wedge the
   probe). After N consecutive failures it declares that one mount point down, which cuts
   only the sessions hanging off it.
 
 Nothing is hardcoded and nothing comes from the environment: the helper socket path is a
 field of the server config (``[workspace].helper_socket``, T5) and is passed in per call, and
-every device/option/hostname is validated in :mod:`.mounting`.
+every device/option/hostname is validated in:mod:`.mounting`.
 """
 
 from __future__ import annotations
@@ -48,13 +48,13 @@ def sentinel_gate(mount_point: str, sentinel_name: str, sentinel_token: str) -> 
 
     Two checks, both mandatory: the mount (``ismount``), then the sentinel — a file whose
     content equals ``sentinel_token``. **An empty token is a refusal, not a relaxation**
-    (T60-C3): the boundary already rejects it (client config, and the server on the control
+: the boundary already rejects it (client config, and the server on the control
     frame), so a "no token means any mount will do" branch here would be a silent internal
     degradation path just waiting for the next caller to find it. The content comparison is
     the whole point of the sentinel — it is what catches a wrong or empty share sitting on the
     same path.
 
-    Wrapped (T49-R18) because non-``OSError`` paths escape and reach the client as a bare
+    Wrapped because non-``OSError`` paths escape and reach the client as a bare
     500 with no reason: a sentinel that is not valid UTF-8 raises ``UnicodeDecodeError`` (a
     ``ValueError``), and a path containing NUL raises ``ValueError`` from ``ismount``/``open``
     outright. Both fold into one English refusal.
@@ -92,7 +92,7 @@ def tcp_probe(host: str, port: int, timeout: float) -> bool:
 def mount_probe(mount_point: str, timeout: float) -> bool:
     """`mountpoint -q <mp>` exits 0 when it is a mount point. Falls back to
     ``os.path.ismount`` when the util-linux binary is not on PATH."""
-    if _on_windows():                      # T82: no mount(8); the share is a UNC link
+    if _on_windows():                      # No mount(8); the share is a UNC link
         return unc_link_ok(mount_point)
     binary = shutil.which("mountpoint")
     if not binary:
@@ -113,12 +113,12 @@ def storage_reachable(mount_point: str, probe_host: str, probe_port: int, timeou
 
 
 class MountMonitor:
-    """Poll one mount point's :func:`storage_reachable` and flip availability on a run of
+    """Poll one mount point's:func:`storage_reachable` and flip availability on a run of
     failures. The actual probing runs in a worker thread so a slow socket/connect never
     stalls the event loop; tests pass a synchronous ``probe`` fake instead.
 
     Deliberately on the **default** executor, not the bridge's bounded workspace pool
-    (T55-S9): that pool is sized for handshakes (4), and its whole purpose is to be small
+: that pool is sized for handshakes (4), and its whole purpose is to be small
     enough that a hung share cannot starve the rest of the bridge. A monitor is a different
     shape of load — one long-lived poller per mounted client, ``tcp_probe`` already bounded by
     ``timeout`` — so parking those behind 4 slots would let N slow shares delay the (N+1)-th
@@ -220,7 +220,7 @@ def _round_trip(request: dict, timeout: float, *, sock_path: str,
         raise MountError(f"workspace helper call failed: {_reason_from(exc)}") from exc
     try:
         sock.sendall((json.dumps(request) + "\n").encode("utf-8"))
-        # Read up to the first **non-blank** line (T56-B). Leading blank lines are tolerated
+        # Read up to the first **non-blank** line. Leading blank lines are tolerated
         # because anything the helper's own interpreter or a stray child writes before the
         # reply would otherwise turn a clean socket into "response unparsable" and bury the
         # real mount failure. The helper itself captures mount(8)'s output, so this is a
@@ -273,7 +273,7 @@ def helper_umount(mount_point: str, timeout: float, *, sock_path: str,
         raise MountError(str(reply.get("reason") or "workspace helper refused the unmount"))
 
 
-# -- T82: the Windows share model ---------------------------------------------------------
+# -- The Windows share model ---------------------------------------------------------
 #
 # Windows has no mount(8), no bind mount and no privileged helper: a client's share is not
 # *mounted* onto ``<root>/<hostname>``, it is **linked** there with ``mklink /D`` — a
@@ -285,14 +285,14 @@ def helper_umount(mount_point: str, timeout: float, *, sock_path: str,
 
 
 def _on_windows() -> bool:
-    """True when the bridge runs on Windows (T82). One seam, so tests can pick a side."""
+    """True when the bridge runs on Windows. One seam, so tests can pick a side."""
     return os.name == "nt"
 
 
 def unc_share_target(fs_type: str, device: str) -> str:
-    """The UNC path a client's cifs device names, in ``\\\\host\\share`` form (T82).
+    """The UNC path a client's cifs device names, in ``\\\\host\\share`` form.
 
-    The device (``//host/share``) is already validated by :func:`mounting.validate_device`
+    The device (``//host/share``) is already validated by:func:`mounting.validate_device`
     before this runs. nfs4 is refused: there is no NFS client here, and the Windows branch
     links SMB shares only.
     """
@@ -313,19 +313,19 @@ def _run_mklink(argv: list[str]) -> None:
 
 
 def _make_dir_link_to_unc(unc: str, link: str, *, spawn=None) -> None:
-    """Create ``link`` as a directory symlink to ``unc`` (T82).
+    """Create ``link`` as a directory symlink to ``unc``.
 
     The argv **is** the contract — ``["cmd", "/c", "mklink", "/D", link, unc]`` (``mklink``
     is a cmd builtin, so it goes through ``cmd /c``). Creating a directory symlink needs
     Developer Mode or an elevated shell; that is a deployment prerequisite documented in the
-    README, not something the bridge can grant itself. ``spawn`` (default :func:`_run_mklink`)
+    README, not something the bridge can grant itself. ``spawn`` (default:func:`_run_mklink`)
     is injectable, so the argv is asserted without running anything.
     """
     argv = ["cmd", "/c", "mklink", "/D", link, unc]
     (spawn or _run_mklink)(argv)
 
 
-# T89: Windows hands back an NT-namespace prefix from ``os.readlink`` — a directory symlink to
+# Windows hands back an NT-namespace prefix from ``os.readlink`` — a directory symlink to
 # a share reads ``\\?\UNC\host\share``, and an extended *local* path reads ``\\?\C:\…``. Both
 # are stripped before a value is classified or compared, or a link that is exactly right looks
 # like a different one (and a local path looks like a UNC).
@@ -333,7 +333,7 @@ _NT_PREFIXES = ("\\\\?\\UNC\\", "\\??\\UNC\\", "\\\\?\\", "\\??\\")
 
 
 def _strip_nt_prefix(value: str) -> str:
-    """Drop a Windows NT path prefix, case-insensitively (T89).
+    """Drop a Windows NT path prefix, case-insensitively.
 
     ``\\\\?\\UNC\\host\\share`` names the share ``\\\\host\\share``, so that prefix maps back
     to ``\\\\``; the plain ``\\\\?\\``/``\\??\\`` forms (extended local paths) just come off.
@@ -348,7 +348,7 @@ def _strip_nt_prefix(value: str) -> str:
 
 
 def unc_link_ok(link: str, *, islink=os.path.islink, readlink=os.readlink) -> bool:
-    """Is ``link`` a **directory symbolic link** whose target is a UNC share? (T82)
+    """Is ``link`` a **directory symbolic link** whose target is a UNC share?
 
     The Windows stand-in for "the share is mounted here": structural, not ``ismount``. The
     criterion is ``os.path.islink`` plus ``os.readlink`` — a **directory symbolic link**,
@@ -356,7 +356,7 @@ def unc_link_ok(link: str, *, islink=os.path.islink, readlink=os.readlink) -> bo
     one, and a junction cannot target a UNC path anyway. ``islink``/``readlink`` are
     injectable so this is tested without creating a link.
 
-    The target is classified **after** its NT prefix is stripped (T89): ``\\\\?\\C:\\local`` is
+    The target is classified **after** its NT prefix is stripped: ``\\\\?\\C:\\local`` is
     a local path, not a share, and must not pass just because it starts with two backslashes.
     """
     try:
@@ -376,7 +376,7 @@ def _same_unc(left: str, right: str) -> bool:
 
 def resolve_unc_share(unc: str, link: str, *, spawn=None, islink=os.path.islink,
                       readlink=os.readlink, exists=os.path.lexists) -> None:
-    """Point ``link`` at ``unc``, idempotently; refuse a wrong existing entry (T82).
+    """Point ``link`` at ``unc``, idempotently; refuse a wrong existing entry.
 
     * nothing there ⇒ create it with ``mklink /D``;
     * a reparse point already at the same UNC ⇒ **reuse it**, creating nothing;
@@ -391,7 +391,7 @@ def resolve_unc_share(unc: str, link: str, *, spawn=None, islink=os.path.islink,
 
 
 def _ascii_path(path: str) -> str:
-    """A path safe for a wire reason: ASCII printable, anything else becomes '?' (T84).
+    """A path safe for a wire reason: ASCII printable, anything else becomes '?'.
 
     ``root`` is operator input, so on Windows it may hold non-ASCII characters; every refusal
     reason this module puts on the wire has to stay plain ASCII.
@@ -399,18 +399,18 @@ def _ascii_path(path: str) -> str:
     return "".join(c if c.isascii() and c.isprintable() else "?" for c in path)
 
 
-# T86: the same filter, under a name another module may import — it is not only about paths
+# The same filter, under a name another module may import — it is not only about paths
 # (the Windows admission reuses it for a ``MountError``'s own sentence).
 ascii_text = _ascii_path
 
 
 def unc_sentinel_gate(link: str, sentinel_name: str, sentinel_token: str, *,
                       link_ok=unc_link_ok) -> str | None:
-    """The Windows gate: a UNC symbolic link at ``link`` plus the sentinel content (T82).
+    """The Windows gate: a UNC symbolic link at ``link`` plus the sentinel content.
 
-    Same shape and the same verdicts as :func:`sentinel_gate`; the only difference is the
-    first check — :func:`unc_link_ok` instead of ``os.path.ismount``. Never raises. The paths
-    that reach a reason go through :func:`_ascii_path` (T84).
+    Same shape and the same verdicts as:func:`sentinel_gate`; the only difference is the
+    first check —:func:`unc_link_ok` instead of ``os.path.ismount``. Never raises. The paths
+    that reach a reason go through:func:`_ascii_path`.
     """
     if not link:
         return "workspace mount point is empty"
