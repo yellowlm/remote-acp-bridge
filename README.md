@@ -258,4 +258,3 @@ build.py build.bat run.bat devrun.py
 config.example.toml client.example.toml helper.example.toml keys.example.txt
 ```
 
-单元测试不随本仓发布；`build.py` 是开发树里的工具，要跑完整条链（含单测与构建产物目录）需要仓库之外的那几个目录。
