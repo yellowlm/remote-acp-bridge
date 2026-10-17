@@ -1,7 +1,3 @@
-## **主包小学学历职业是杀猪师傅，完全不懂代码，本项目纯VIBE，主要目的是杀猪自动化，主包没看过一个字代码，不保证安全好用。**
-
-## **README文件由DeepSeek生成，他满嘴黑话主包也没办法，管也管不动骂也骂不好，请各位自己找DeepSeek读然后解释给你们听。**
-
 # Remote ACP Bridge
 
 把**远端**的 ACP agent（opencode / qwen / openclaw …）经一条**带认证的 WebSocket** 暴露成宿主本地的 stdio ACP agent。宿主（AionUi、Zed 等）以为自己在跟本机 agent 说话；实际那条命令是 `remote_acp_client.py`，它把 stdin/stdout 上的 ndjson 帧原样转发给远端的 `remote_acp_server.py`，由服务端拉起并驱动真正的 agent 子进程。
@@ -13,6 +9,12 @@
                                                               │
                                                       挂载/链接：宿主的共享目录
 ```
+
+## 关于本项目
+
+- **主包小学学历职业是杀猪师傅，完全不懂代码，本项目纯VIBE，主要目的是杀猪自动化，主包转行赛博包工头没看过一个字代码，不保证安全好用。**
+- **README文件由DeepSeek生成，他满嘴黑话主包也没办法，管也管不动骂也骂不好，请大佬们找DeepSeek读然后解释给你们听。**
+- **遇事请大佬们直接咨询DeepSeek，写issue应该没卵用，主包比较懒可能不太看😭😭😭。**
 
 ## Requirements
 
@@ -190,6 +192,17 @@ python3 src/remote_acp_helper.py --config configs/helper.toml    # root；--conf
 python3 src/remote_acp_client.py --config client.toml --server linux-host --agent opencode
 ```
 
+`--server` 对应 `client.toml` 里某个 `[[servers]]` 的 `name`，`--agent` 是服务端那个实例 `[[agents]]` 里的一条 `name`。
+
+客户端是**标准 stdio ACP agent**，不是给你在终端里交互用的：它由宿主（AionUi、Zed、OpenCode…）当成本机 agent 拉起，`stdin`/`stdout` 就是 ACP 通道。宿主里要填的就是上面那条命令。手工验一条可以用管道喂帧：
+
+```bash
+echo '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1,"clientCapabilities":{}}}' \
+  | python3 src/remote_acp_client.py --config client.toml --server linux-host --agent opencode
+```
+
+Windows 上宿主那条命令一般指向一个 `.bat`，那个 bat **首行必须是 `@echo off`**——stdout 就是 ACP 通道，命令行回显会被宿主当成一帧、回 `-32700 Parse error`。
+
 交付包里的入口在 `app/src/` 下，仓里就在 `src/` 下，其余一致。
 
 会话建立后客户端会往 stdout 注入**一条** ACP `session/update` 通知，正文是该会话的桥 uuid；同一 uuid 也打在 stderr（`connected ws://… session=<uuid> (new|resume)`）。**stdout 只有 ACP JSON 行**，其余一律 stderr。
@@ -254,7 +267,6 @@ src/remote_acp_bridge/                     # 包：server / client / session / w
   resources/                               # 插件用的提示词资源
 systemd/                                   # 两个单元（@ROOT@ 占位）
 install.sh                                 # Linux 安装（就地渲染 @ROOT@ 后 ln -sf 进 /usr/lib/systemd/system）
-build.py build.bat run.bat devrun.py
 config.example.toml client.example.toml helper.example.toml keys.example.txt
 ```
 

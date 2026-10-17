@@ -35,3 +35,9 @@ configs/
 
 # ... but the documented examples are tracked
 !keys.example.txt
+
+# Dev-tree tooling, not part of the published package
+build.py
+build.bat
+run.bat
+devrun.py
