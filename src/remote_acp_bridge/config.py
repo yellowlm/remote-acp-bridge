@@ -298,7 +298,8 @@ class WorkspaceConfig:
     monitor_interval_seconds: float = 5.0
     monitor_timeout_seconds: float = 2.0
     monitor_fail_threshold: int = 3
-    # The budget for the handshake's "mount the share, then run the gate" step. It is its own
+    # The budget for **every** helper call the bridge makes: the handshake's "mount the share,
+    # then run the gate", the residual-cleanup umount, and the last-session umount. It is its own
     # key because the helper's own worst case is ``[mount].timeout * (1 + retry)`` = 20 s at
     # the delivered defaults, and ``monitor_timeout_seconds`` (2 s) is only the monitor
     # probe's — the two must not be coupled, or the bridge gives up long before the helper
