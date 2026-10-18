@@ -1053,7 +1053,7 @@ class Bridge:
                 # still proves it is the right share.
                 self.log.warning("workspace mount point %s is already mounted; reusing it", mount_point)
                 with contextlib.suppress(MountError):
-                    helper_umount(mount_point, timeout=cfg.monitor_timeout_seconds,
+                    helper_umount(mount_point, timeout=cfg.helper_timeout_seconds,
                                   sock_path=cfg.helper_socket)
             if not os.path.ismount(mount_point):
                 credentials = {
@@ -1071,7 +1071,7 @@ class Bridge:
                         # The share owner is the server's choice, never the client's options.
                         "uid": cfg.mount_uid,
                         "gid": cfg.mount_gid,
-                    }, timeout=cfg.monitor_timeout_seconds, sock_path=cfg.helper_socket)
+                    }, timeout=cfg.helper_timeout_seconds, sock_path=cfg.helper_socket)
                 except MountError as exc:
                     return str(exc), None
             if abandon.abandoned:
@@ -1099,7 +1099,7 @@ class Bridge:
                 # this very result), so releasing the registry claim and unmounting is safe.
                 self._mounts.pop(hostname, None)
                 with contextlib.suppress(MountError):
-                    helper_umount(entry.mount_point, timeout=cfg.monitor_timeout_seconds,
+                    helper_umount(entry.mount_point, timeout=cfg.helper_timeout_seconds,
                                   sock_path=cfg.helper_socket)
             return reason, None
         if abandon.abandoned:
@@ -1205,7 +1205,11 @@ class Bridge:
             try:
                 reason, entry = await asyncio.wait_for(
                     asyncio.shield(future),
-                    timeout=cfg.monitor_timeout_seconds * 2,   # the mount and the gate after it
+                    # The mount and the gate after it. Its own key, not the monitor probe's:
+                    # the helper retries (worst case timeout * (1 + retry) = 20 s), so a
+                    # budget coupled to ``monitor_timeout_seconds`` would abandon a mount
+                    # that is still being attempted.
+                    timeout=cfg.helper_timeout_seconds,
                 )
             except asyncio.TimeoutError:
                 abandon.abandoned = True
@@ -1319,7 +1323,7 @@ class Bridge:
         last = ""
         for attempt in range(UMOUNT_ATTEMPTS):
             try:
-                helper_umount(mount_point, timeout=cfg.monitor_timeout_seconds,
+                helper_umount(mount_point, timeout=cfg.helper_timeout_seconds,
                               sock_path=cfg.helper_socket)
                 return True
             except MountError as exc:

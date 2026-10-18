@@ -33,7 +33,9 @@ import stat
 import subprocess
 import sys
 import tempfile
+import threading
 import tomllib
+from dataclasses import dataclass
 from pathlib import PurePosixPath
 
 from . import mounting
@@ -43,6 +45,65 @@ from .mounting import MountInputError
 # (``--config`` is required), so nothing is hardcoded to one deployment root any more. The
 # socket default stays: it is a socket's conventional path, overridable in helper.toml.
 DEFAULT_HELPER_SOCKET = "/run/remote-acp-helper.sock"
+
+
+@dataclass(frozen=True)
+class MountSettings:
+    """The helper's own ``[mount]`` budget.
+
+    ``timeout`` is the per-attempt limit handed to ``subprocess.run``, ``retry`` the number
+    of extra attempts after the first (so a mount is tried ``1 + retry`` times), and
+    ``concurrency`` how many requests may be in flight at once. The defaults match the
+    delivered ``configs/helper.toml``, so a file with no ``[mount]`` section keeps working.
+    """
+
+    timeout: int = 5
+    retry: int = 3
+    concurrency: int = 20
+
+
+#: Per-key floor, so a mount budget can never be zero or negative.
+_MOUNT_FLOORS = {"timeout": 1, "retry": 0, "concurrency": 1}
+
+
+def _load_config_data(path: str) -> dict:
+    """The parsed helper config as a dict; ``{}`` when the file does not exist.
+
+    Raises:class:`HelperError` (English, one line) when the file exists but cannot be read
+    or parsed. Both readers below share this so a file is parsed once and the ``[socket]``
+    behaviour stays exactly as it was.
+    """
+    if not os.path.isfile(path):
+        return {}
+    try:
+        with open(path, "rb") as handle:
+            return tomllib.load(handle)
+    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
+        raise HelperError(f"helper config {path} cannot be read: {type(exc).__name__}") from exc
+
+
+def load_mount_settings(path: str) -> MountSettings:
+    """The helper's ``[mount]`` budget (``timeout``/``retry``/``concurrency``).
+
+    A missing file, or a file with no ``[mount]`` table, is the default budget — an operator
+    who never wrote one still gets retries. A value that is not an integer, or below its
+    floor (``timeout >= 1``, ``retry >= 0``, ``concurrency >= 1``), is a startup error: the
+    service refuses to start rather than mounting with a budget it did not understand.
+    """
+    data = _load_config_data(path)
+    section = data.get("mount")
+    if section is None:
+        return MountSettings()
+    if not isinstance(section, dict):
+        raise HelperError(f"helper config {path}: 'mount' must be a table")
+    values: dict[str, int] = {}
+    for key, floor in _MOUNT_FLOORS.items():
+        raw = section.get(key, getattr(MountSettings(), key))
+        if isinstance(raw, bool) or not isinstance(raw, int) or raw < floor:
+            raise HelperError(
+                f"helper config {path}: 'mount.{key}' must be an integer >= {floor}")
+        values[key] = raw
+    return MountSettings(**values)
 
 
 class HelperError(Exception):
@@ -197,16 +258,20 @@ def _journal(note: str) -> None:
     print(f"remote-acp-helper: {note}", file=sys.stderr, flush=True)
 
 
-def default_spawn(argv, *, check):
-    """Run mount(8)/umount(8) with its output **captured**.
+def default_spawn(argv, *, check, timeout=None):
+    """Run mount(8)/umount(8) with its output **captured** and a hard per-attempt timeout.
 
     measured: once the unit wires stdio to the socket, an un-captured ``/bin/mount``
     prints its own line onto the socket first, and the bridge reads *that* as the reply
     ("workspace helper response unparsable"). Capturing keeps the wire clean; the text is
     still surfaced to the journal for the operator.
+
+    ``timeout`` is the helper's own ``[mount].timeout``. Without it a mount that hangs on an
+    unreachable server is waited on forever, and the bridge (which has its own budget) has
+    long since moved on.
     """
-    return subprocess.run(argv, check=check, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                          text=True, encoding="utf-8", errors="replace")
+    return subprocess.run(argv, check=check, timeout=timeout, stdout=subprocess.PIPE,
+                          stderr=subprocess.PIPE, text=True, encoding="utf-8", errors="replace")
 
 
 def _command_output(exc: subprocess.CalledProcessError) -> str:
@@ -214,27 +279,56 @@ def _command_output(exc: subprocess.CalledProcessError) -> str:
     return text[:200]
 
 
-def run_mount(fields: dict, *, spawn=default_spawn) -> None:
-    """Create the mount dir, mount under it, and roll the dir back if the mount failed.
+def _run_with_retry(action, *, attempts: int, op: str) -> None:
+    """Run ``action`` up to ``attempts`` times and re-raise the last failure.
 
-    The credential file exists only inside the ``with`` block, so mount sees it by path and
-    it is gone before this returns either way.
+    ``attempts`` is ``1 + retry`` — the first try plus the configured retries. A retry is
+    noted in the journal so an operator sees a flapping share, and only the final failure
+    reaches the caller (whose wire reason stays ours and generic).
     """
+    for attempt in range(1, attempts + 1):
+        try:
+            action()
+            return
+        except (OSError, subprocess.CalledProcessError) as exc:
+            if attempt >= attempts:
+                raise
+            _journal(f"{op} attempt {attempt}/{attempts} failed "
+                     f"({type(exc).__name__}), retrying")
+
+
+def _mount_once(fields: dict, *, spawn, timeout: int) -> None:
+    """One ``/bin/mount`` attempt; the credential file lives only for this call."""
+    mount_point = fields["mount_point"]
+    creds = fields["credentials"]
+    if fields["fs_type"] == "cifs":
+        with CredentialFile(creds["username"], creds["password"], creds.get("domain", "")) as cred_path:
+            options = mounting.build_composed_options(
+                fields["fs_type"], fields["options"], cred_path,
+                uid=fields.get("uid", ""), gid=fields.get("gid", ""))
+            spawn(mounting.build_mount_argv(
+                fields["fs_type"], fields["device"], mount_point, options),
+                check=True, timeout=timeout)
+    else:
+        options = mounting.build_composed_options(fields["fs_type"], fields["options"], "")
+        spawn(mounting.build_mount_argv(
+            fields["fs_type"], fields["device"], mount_point, options),
+            check=True, timeout=timeout)
+
+
+def run_mount(fields: dict, *, spawn=default_spawn, settings: MountSettings | None = None) -> None:
+    """Create the mount dir, mount under it (``1 + retry`` attempts), roll back on failure.
+
+    The credential file exists only inside one attempt, so mount sees it by path and it is
+    gone before this returns either way. A mount that never succeeded leaves neither a mount
+    nor a directory behind.
+    """
+    budget = settings or MountSettings()
     mount_point = fields["mount_point"]
     os.makedirs(mount_point, mode=0o555, exist_ok=True)
-    creds = fields["credentials"]
     try:
-        if fields["fs_type"] == "cifs":
-            with CredentialFile(creds["username"], creds["password"], creds.get("domain", "")) as cred_path:
-                options = mounting.build_composed_options(
-                    fields["fs_type"], fields["options"], cred_path,
-                    uid=fields.get("uid", ""), gid=fields.get("gid", ""))
-                spawn(mounting.build_mount_argv(
-                    fields["fs_type"], fields["device"], mount_point, options), check=True)
-        else:
-            options = mounting.build_composed_options(fields["fs_type"], fields["options"], "")
-            spawn(mounting.build_mount_argv(
-                fields["fs_type"], fields["device"], mount_point, options), check=True)
+        _run_with_retry(lambda: _mount_once(fields, spawn=spawn, timeout=budget.timeout),
+                        attempts=1 + budget.retry, op="mount")
     except (OSError, subprocess.CalledProcessError):
         # A failed mount must leave neither a mount nor a directory behind: the bridge's
         # gate rolls back its own mount, but this directory is ours (T54 note 5).
@@ -243,18 +337,48 @@ def run_mount(fields: dict, *, spawn=default_spawn) -> None:
         raise
 
 
-def run_umount(fields: dict, *, spawn=default_spawn) -> None:
-    spawn(mounting.build_umount_argv(fields["mount_point"]), check=True)
+def run_umount(fields: dict, *, spawn=default_spawn, settings: MountSettings | None = None) -> None:
+    """Unmount with the same ``1 + retry`` budget as a mount (a busy share can be brief)."""
+    budget = settings or MountSettings()
+    mount_point = fields["mount_point"]
+    _run_with_retry(
+        lambda: spawn(mounting.build_umount_argv(mount_point), check=True,
+                      timeout=budget.timeout),
+        attempts=1 + budget.retry, op="umount")
 
 
-def handle(req: dict, *, roots: list[str] | None = None, spawn=default_spawn) -> dict:
+_mount_locks: dict[str, threading.Lock] = {}
+_mount_locks_guard = threading.Lock()
+
+
+def _mount_lock(key: str) -> threading.Lock:
+    """The lock for one already-resolved mount point, created on first use.
+
+    A per-key dict rather than one global lock: two requests for the same share must not
+    overlap (mount/umount are not reentrant on one point), while different shares stay
+    independent. A request takes exactly one lock, so there is no lock ordering to deadlock.
+    """
+    with _mount_locks_guard:
+        lock = _mount_locks.get(key)
+        if lock is None:
+            lock = _mount_locks[key] = threading.Lock()
+        return lock
+
+
+def handle(req: dict, *, roots: list[str] | None = None, spawn=default_spawn,
+           settings: MountSettings | None = None) -> dict:
     """Pure decision path: validate + act, always returning a ``{ok, reason}`` dict.
 
     ``roots`` are the allowed mount roots, and the caller must supply them: no roots (or
     ``None``) is a refusal (fail closed). T97 removed the old fallback that read them from a
     hardcoded deployment directory — the helper never guesses where its confinement comes
     from, and ``main`` always passes the directory of the ``--config`` it was given.
+
+    The lock is taken **after** validation and keyed on the resolved mount point, so the
+    whole transaction (mount or umount, including the failure rollback) is serialised per
+    share — the key is never the caller's raw string.
     """
+    budget = settings or MountSettings()
     allowed = list(roots or [])
     if not allowed:
         return {"ok": False, "reason": "no workspace root is configured"}
@@ -264,19 +388,26 @@ def handle(req: dict, *, roots: list[str] | None = None, spawn=default_spawn) ->
         # These reasons are ours (whitelist verdicts), already English and secret-free.
         return {"ok": False, "reason": str(exc)}
     try:
-        if fields["op"] == mounting.OP_MOUNT:
-            run_mount(fields, spawn=spawn)
-        else:
-            run_umount(fields, spawn=spawn)
+        with _mount_lock(os.path.realpath(fields["mount_point"])):
+            if fields["op"] == mounting.OP_MOUNT:
+                run_mount(fields, spawn=spawn, settings=budget)
+            else:
+                run_umount(fields, spawn=spawn, settings=budget)
     except subprocess.CalledProcessError as exc:
         # mount's own words go to the journal, not to the wire: they can name the temporary
         # credential path, and the reason on the control frame has to be ours.
         _journal(f"{fields['op']} failed (rc={exc.returncode}): {_command_output(exc)}")
         return {"ok": False, "reason": "mount command failed"}
-    except (OSError, MountInputError) as exc:
-        # Never str(OSError): strerror is locale-dependent (M4 — a Chinese Windows
-        # renders WinError 5 in local words) and this string reaches the client's control
-        # frame and the log, which have to be English on every host.
+    except (OSError, subprocess.TimeoutExpired) as exc:
+        # A timeout is a failed attempt like any other; never str(OSError), because strerror
+        # is locale-dependent (M4 — a Chinese Windows renders WinError 5 in local words) and
+        # this string reaches the client's control frame and the log, which have to be English
+        # on every host.
+        reason = "mount command timed out" if isinstance(exc, subprocess.TimeoutExpired) \
+            else mounting.english_reason(exc)
+        _journal(f"{fields['op']} failed: {reason}")
+        return {"ok": False, "reason": reason}
+    except MountInputError as exc:
         reason = mounting.english_reason(exc)
         _journal(f"{fields['op']} failed: {reason}")
         return {"ok": False, "reason": reason}
@@ -295,11 +426,7 @@ def load_helper_config(path: str) -> str:
     """
     if not os.path.isfile(path):
         return DEFAULT_HELPER_SOCKET
-    try:
-        with open(path, "rb") as handle:
-            data = tomllib.load(handle)
-    except (OSError, tomllib.TOMLDecodeError, UnicodeDecodeError) as exc:
-        raise HelperError(f"helper config {path} cannot be read: {type(exc).__name__}") from exc
+    data = _load_config_data(path)
     section = data.get("socket")
     if not isinstance(section, dict):
         # The convention is a ``[socket]`` table. Anything else — the section absent, or the
@@ -372,10 +499,19 @@ def _read_request_line(connection, limit: int = 1 << 20) -> str:
 
 
 def _reply(connection, reply: dict) -> None:
-    connection.sendall((json.dumps(reply) + "\n").encode("utf-8"))
+    """Send the one reply; a peer that already left is dropped, never the process.
+
+    ``sendall`` raises ``BrokenPipeError`` when the bridge closed its end first (it gave up
+    on its own budget and moved on). That is the connection's problem: unhandled it would
+    exit the helper and have systemd restart it, and every connection in that restart window
+    would be refused. The same treatment as the ``close()`` beside it.
+    """
+    with contextlib.suppress(OSError):
+        connection.sendall((json.dumps(reply) + "\n").encode("utf-8"))
 
 
-def _serve_one(connection, roots: list[str], *, spawn=default_spawn) -> None:
+def _serve_one(connection, roots: list[str], *, spawn=default_spawn,
+               settings: MountSettings | None = None) -> None:
     """Handle one connection: one JSON request in, one JSON reply out."""
     raw = _read_request_line(connection)
     if not raw.strip():
@@ -386,18 +522,41 @@ def _serve_one(connection, roots: list[str], *, spawn=default_spawn) -> None:
     except (ValueError, UnicodeDecodeError):
         _reply(connection, {"ok": False, "reason": "request was not valid JSON"})
         return
-    _reply(connection, handle(req, roots=roots, spawn=spawn))
+    _reply(connection, handle(req, roots=roots, spawn=spawn, settings=settings))
+
+
+def _serve_worker(connection, roots: list[str], spawn, settings: MountSettings,
+                  slots: threading.Semaphore) -> None:
+    """One accepted connection on its own thread: always closes it, always frees the slot.
+
+    Nothing raised in here may take the service down (the thread's exception would be
+    printed and lost); the connection is closed on every path, so none is leaked.
+    """
+    try:
+        _serve_one(connection, roots, spawn=spawn, settings=settings)
+    except Exception as exc:                      # noqa: BLE001 — a worker must not kill the service
+        _journal(f"connection failed: {type(exc).__name__}")
+    finally:
+        with contextlib.suppress(OSError):
+            connection.close()
+        slots.release()
 
 
 def serve(socket_path: str, roots: list[str], *, server_factory=bind_socket,
-          spawn=default_spawn) -> None:
+          spawn=default_spawn, settings: MountSettings | None = None) -> None:
     """Bind the helper socket and serve requests until killed.
 
-    One connection is one short transaction (read a request, act, reply, close), handled
-    serially — a per-mount helper needs no concurrency. ``server_factory`` is injectable so the
-    accept loop is unit-tested without AF_UNIX; ``spawn`` is threaded to:func:`handle`.
+    One connection is one short transaction (read a request, act, reply, close). Each is
+    handed to its own thread, so a mount that uses its whole retry budget (20 s at the
+    defaults) no longer blocks the next caller; at most ``concurrency`` run at once — the
+    accept loop waits on the semaphore, so the listener's backlog holds the rest.
+    ``server_factory`` is injectable so the accept loop is unit-tested without AF_UNIX;
+    ``spawn`` and ``settings`` are threaded to:func:`handle`.
     """
+    budget = settings or MountSettings()
     server = server_factory(socket_path)
+    slots = threading.Semaphore(budget.concurrency)
+    workers: set[threading.Thread] = set()
     try:
         while True:
             try:
@@ -406,11 +565,13 @@ def serve(socket_path: str, roots: list[str], *, server_factory=bind_socket,
                 return
             except OSError:
                 continue
-            try:
-                _serve_one(connection, roots, spawn=spawn)
-            finally:
-                with contextlib.suppress(OSError):
-                    connection.close()
+            slots.acquire()
+            worker = threading.Thread(
+                target=_serve_worker, args=(connection, roots, spawn, budget, slots),
+                name="rab-helper-mount", daemon=True)
+            workers.add(worker)
+            worker.start()
+            workers = {w for w in workers if w.is_alive()}
     finally:
         server.close()
 
@@ -430,8 +591,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     try:
         socket_path = load_helper_config(args.config)
+        settings = load_mount_settings(args.config)
         roots = discover_roots(os.path.dirname(os.path.abspath(args.config)))
-        serve(socket_path, roots)
+        serve(socket_path, roots, settings=settings)
     except (HelperError, OSError) as exc:
         print(f"remote-acp-helper: {exc}", file=sys.stderr)
         return 1

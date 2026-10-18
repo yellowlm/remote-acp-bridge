@@ -2,3 +2,9 @@
 
 [socket]
 path = "/run/remote-acp-helper.sock"
+
+# The helper's own mount budget. Omit the whole section to get these values.
+[mount]
+timeout = 5        # seconds per mount/umount attempt (kills a hung mount)
+retry = 3          # extra attempts after the first (so a mount is tried 1 + retry times)
+concurrency = 20   # how many requests may be in flight at once

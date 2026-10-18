@@ -298,6 +298,12 @@ class WorkspaceConfig:
     monitor_interval_seconds: float = 5.0
     monitor_timeout_seconds: float = 2.0
     monitor_fail_threshold: int = 3
+    # The budget for the handshake's "mount the share, then run the gate" step. It is its own
+    # key because the helper's own worst case is ``[mount].timeout * (1 + retry)`` = 20 s at
+    # the delivered defaults, and ``monitor_timeout_seconds`` (2 s) is only the monitor
+    # probe's — the two must not be coupled, or the bridge gives up long before the helper
+    # has finished trying.
+    helper_timeout_seconds: float = 30.0
 
     @classmethod
     def from_dict(cls, data: dict, base: Path | None = None) -> "WorkspaceConfig":
@@ -306,6 +312,9 @@ class WorkspaceConfig:
                 raise ConfigError(
                     f"[workspace] {legacy} was removed (T53): {where}"
                 )
+        helper_timeout = _get(data, "helper_timeout_seconds", 30.0)
+        if isinstance(helper_timeout, bool) or not isinstance(helper_timeout, (int, float)):
+            raise ConfigError("[workspace] helper_timeout_seconds must be a number")
         ws = cls(
             root=str(_get(data, "root", "")),
             helper_socket=str(_get(data, "helper_socket", "/run/remote-acp-helper.sock")),
@@ -314,6 +323,7 @@ class WorkspaceConfig:
             monitor_interval_seconds=float(_get(data, "monitor_interval_seconds", 5.0)),
             monitor_timeout_seconds=float(_get(data, "monitor_timeout_seconds", 2.0)),
             monitor_fail_threshold=int(_get(data, "monitor_fail_threshold", 3)),
+            helper_timeout_seconds=float(helper_timeout),
         )
         # The workspace is always on: every server.toml must name its root.
         # The criterion is platform-aware. ``PurePosixPath('C:\\RAB\\ws')`` is never
@@ -335,9 +345,13 @@ class WorkspaceConfig:
         if ws.monitor_interval_seconds <= 0:
             raise ConfigError("[workspace] monitor_interval_seconds must be > 0")
         if ws.monitor_timeout_seconds <= 0:
-            # Also the handshake mount/gate timeout; a 0/negative value would either
-            # refuse instantly or never time out.
+            # Only the monitor probe's budget now; a 0/negative value would either refuse
+            # instantly or never time out.
             raise ConfigError("[workspace] monitor_timeout_seconds must be > 0")
+        if ws.helper_timeout_seconds <= 0:
+            # The handshake mount/gate budget: it must outlast the helper's own worst case
+            # (timeout * (1 + retry)), or the bridge abandons a mount that is still trying.
+            raise ConfigError("[workspace] helper_timeout_seconds must be > 0")
         return ws
 
 

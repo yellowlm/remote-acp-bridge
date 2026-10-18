@@ -68,3 +68,6 @@ mount_gid                = "agent"
 monitor_interval_seconds = 5
 monitor_timeout_seconds  = 2
 monitor_fail_threshold   = 3
+# Budget for the handshake's "mount the share, then run the gate" step. Keep it above the
+# helper's own worst case: [mount].timeout * (1 + retry) — 20 s at the helper defaults.
+helper_timeout_seconds   = 30

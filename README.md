@@ -76,8 +76,19 @@ sudo systemctl enable --now remote-acp-server@<instance>
 | `[logging]` | `level="off"`（`off`\|`debug`\|`info`\|`warn`\|`warning`\|`error`）/ `file=""`（留空写 stderr） |
 | `[[agents]]` | `name` / `command` / `args=[]` / `cwd=""` / `env={}`（追加到父进程环境）/ `plugins=[]` |
 | `[[agents.plugins]]` | `name`（内置插件名，必填）/ `config`（表，必填；插件拿到的就是它） |
-| `[workspace]` | `root`（**必填、必须绝对路径**）/ `helper_socket="/run/remote-acp-helper.sock"` / `mount_uid="agent"` / `mount_gid="agent"` / `monitor_interval_seconds=5` / `monitor_timeout_seconds=2` / `monitor_fail_threshold=3` |
+| `[workspace]` | `root`（**必填、必须绝对路径**）/ `helper_socket="/run/remote-acp-helper.sock"` / `mount_uid="agent"` / `mount_gid="agent"` / `monitor_interval_seconds=5` / `monitor_timeout_seconds=2`（**只归监控探针**）/ `monitor_fail_threshold=3` / `helper_timeout_seconds=30`（挂载＋闸门预算，须**宽于 helper 自己的最坏耗时**：`[mount].timeout × (1 + retry)`） |
 | `[env]` | 该实例**所有 agent 共用**的环境变量（键→字符串，可选）。合并阶梯（低→高）：`os.environ` → `[env]` → `[[agents]].env`（覆盖全局） → 桥注入的会话事实（见下）。 |
+
+### helper `helper.toml`
+
+helper 自己读 `--config` 指的那份文件（`configs/helper.toml`），与实例的 `server.toml` 同目录；允许挂载的根**只**来自同目录下各实例的 `[workspace].root`，永不来自请求。
+
+| 表 | 键（默认值） |
+| --- | --- |
+| `[socket]` | `path="/run/remote-acp-helper.sock"`（与 `server.toml` 的 `helper_socket` 必须同名） |
+| `[mount]` | `timeout=5`（每次挂载/卸载的秒数上限，超时按失败算）/ `retry=3`（首次之外的额外尝试次数，故一共 `1 + retry` 次）/ `concurrency=20`（同时在跑的请求上限）。整段不写就用这三个默认值；不是整数或不满足 `timeout ≥ 1`、`retry ≥ 0`、`concurrency ≥ 1` ⇒ 启动打一行英文并退出 1。 |
+
+同一挂载点的挂载/卸载**串行**（一把按挂载点分的锁，键是校验后的真实路径），不同挂载点并行；accept 之后每条连接交一个线程，线程数上限就是 `concurrency`。
 
 `[auth].keys_file` 是**服务端**的桥 key 文件：**一行一个 key**（不写用户名），`#` 起注释（整行或行尾），空行忽略，key 本身不能含 `#`；认证时逐个常量时间比对，命中任意一行即通过。客户端不读这个文件——它的 key 写在每个 `[[servers]].key` 里。
 
