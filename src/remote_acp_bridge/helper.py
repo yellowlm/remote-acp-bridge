@@ -290,7 +290,7 @@ def _run_with_retry(action, *, attempts: int, op: str) -> None:
         try:
             action()
             return
-        except (OSError, subprocess.CalledProcessError) as exc:
+        except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired) as exc:
             if attempt >= attempts:
                 raise
             _journal(f"{op} attempt {attempt}/{attempts} failed "
@@ -329,7 +329,7 @@ def run_mount(fields: dict, *, spawn=default_spawn, settings: MountSettings | No
     try:
         _run_with_retry(lambda: _mount_once(fields, spawn=spawn, timeout=budget.timeout),
                         attempts=1 + budget.retry, op="mount")
-    except (OSError, subprocess.CalledProcessError):
+    except (OSError, subprocess.CalledProcessError, subprocess.TimeoutExpired):
         # A failed mount must leave neither a mount nor a directory behind: the bridge's
         # gate rolls back its own mount, but this directory is ours (T54 note 5).
         with contextlib.suppress(OSError):
