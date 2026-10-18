@@ -38,7 +38,7 @@ sudo systemctl enable --now remote-acp-server@<instance>
 * `remote-acp-server@<instance>.service` —— 模板实例，跑 `app/src/remote_acp_server.py --instance %i --instances-dir @ROOT@/configs`，以 `agent` 账号运行。
 * `remote-acp-helper.service` —— **root** 常驻的挂载辅助，跑 `app/src/remote_acp_helper.py --config @ROOT@/configs/helper.toml`。桥自己无权限挂载，挂载动作全在这一侧。
 
-> 整份交付被拷到别处时，单元里渲染好的旧绝对路径不会自动更新——重新跑一次 `install.sh` 即可。
+> 交付里的两个单元是**生产形态**、路径已经写死（如 `/data/…`）；整份交付换到别处时这些绝对路径不会自己更新——要么手改单元里的路径，要么换上源码仓里那两个带 `@ROOT@` 的单元再跑一次 `install.sh`（它按自己所在目录渲染）。
 
 ## Windows
 
@@ -133,7 +133,7 @@ remote_acp_client.py --config <client.toml> --server <name> --agent <name> [--se
 | 表 | 键（默认值）与后果 |
 | --- | --- |
 | `[[servers]]` | `name`（必填）/ `host`（必填；可写 IPv6 字面量 `::1`，URL 里会自动加方括号）/ `port=7801` / `key`（**必填**，该 server 自己的桥 key）/ `agents=[]`（客户端本机白名单；空＝不限，写了则名单外的 `--agent` 在**加载阶段**报错退 1） |
-| `[servers.tls]` | `enabled=true` / `insecure=false` / `ca_file=""`（相对路径按 client.toml 所在目录解析）/ `fingerprint=""` |
+| `[servers.tls]` | `enabled=true` / `insecure=false` / `ca_file=""`（相对路径按 client.toml 所在目录解析）/ `fingerprint=""`（**可选**，见 Troubleshooting） |
 | `[servers.workspace]` | `hostname`（**必填**，就是服务端认的客户端名）/ `share_dir`（本机对那个共享的挂载点）/ `fs_type="cifs"` / `device`（cifs 写 `//host/share`；nfs4 写 `host:/export`）/ `mount_options=[]` / `username` / `password` / `domain=""` / `sentinel_token`（**必填**） |
 | `[servers.logging]` | `level="off"` / `file=""`（相对路径按 client.toml 解析；`debug` 时把帧 trace 也写进同一文件） |
 | `pass_mcp`（`[[servers]]` 键） | `["*"]`。名单里出现 `*` 或整条不写 ⇒ 上行 `session/new\|load\|resume` 的 `params.mcpServers` 一字不改；给了不含 `*` 的名单 ⇒ 只留 `name` 命中的项（没有 `name` 的项一律删）；`pass_mcp = []` ＝ 全删。 |
@@ -256,7 +256,7 @@ X-Remote-ACP-Bridge-Config:     <base64(json)>   ← 总是带
   ```
 
 * **`/etc/systemd/system/<unit>` 会遮蔽 `/usr/lib`**：`install.sh` 把单元放进 `/usr/lib/systemd/system/`；如果 `/etc/systemd/system/` 下有同名单元，systemd 优先用后者。它不会自动删，请自己确认。
-* **证书指纹 pin**：`[servers.tls].fingerprint` 填 `base64(SHA-256(对端证书 DER))`。配了它，**升级请求发出之前**就会校验对端证书，不符打 `tls certificate fingerprint mismatch` 退 `6`、不重连。**与 `insecure` 正交**：`insecure = true` 只关掉 CA/主机名校验，pin 照样必须过（自签证书就是这组合）。值必须是合法 base64 且解出正好 32 字节，否则加载即报错退 `1`。
+* **证书指纹 pin（可选）**：`[servers.tls].fingerprint` 填 `base64(SHA-256(对端证书 DER))`。**不写＝与不配它时完全一样**、一个字节都不校验；写了就**在升级请求发出之前**校验对端证书，不符打 `tls certificate fingerprint mismatch` 退 `6`、不重连——自签证书用它就是「只认这一张证」，不必依赖 CA。**与 `insecure` 正交**：`insecure = true` 只关掉 CA/主机名校验，pin 照样必须过。值必须是合法 base64 且解出正好 32 字节，否则加载即报错退 `1`。
 
 ## Source layout
 
