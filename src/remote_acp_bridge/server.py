@@ -1042,6 +1042,31 @@ class Bridge:
 
         entry = self._mounts.get(hostname)
         created = False
+        if entry is not None and not os.path.ismount(entry.mount_point):
+            # Stale entry: the registry still claims this share, but nothing is mounted at its
+            # path (the helper's umount won a race, or the mount vanished under us). The gate
+            # only knows "not mounted", so every connect would be refused with a permanent 412
+            # until a restart cleared ``_mounts``. Judge by the mount fact, never by
+            # ``entry.available``: that flag is the monitor's probe verdict, lags by up to one
+            # interval, and reads *available* for a share that disappeared quietly.
+            if entry.refs == 0:
+                self._mounts.pop(hostname, None)
+                if entry.stop is not None:
+                    # ``stop`` is an asyncio.Event and this runs on the workspace pool thread.
+                    loop = self._loop
+                    if loop is not None:
+                        loop.call_soon_threadsafe(entry.stop.set)
+                self.log.warning(
+                    "workspace entry for %s claims a mount that is gone; dropping the entry "
+                    "and mounting again", hostname)
+                entry = None
+            else:
+                # Live sessions still hold this share: never pull it out from under them, and
+                # never stack a second mount on top. They keep the gate's refusal per request
+                # until the mount comes back or they end.
+                self.log.warning(
+                    "workspace entry for %s claims a mount that is gone but %s session(s) "
+                    "still hold it; leaving it alone", hostname, entry.refs)
         # An entry the monitor marked unreachable no longer refuses a newcomer. The share
         # may still be mounted (the gate below re-checks it), and a session admitted on it is
         # answered with a JSON-RPC error per request until the monitor sees it again.
